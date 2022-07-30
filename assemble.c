@@ -728,7 +728,7 @@ do_mcalled_macro:
 
                 case P_MDELETE:
                     return 1;   /* TODO: or should it just be a NOP? */
-                    
+
                 case P_MEXIT:
                     {
                         STREAM         *macstr;
@@ -1286,7 +1286,7 @@ do_mcalled_macro:
                     {
                         int i, count;
                         unsigned *rad50;
-                        
+
                         /* Now assemble the argument */
                         rad50 = assemble_rad50 (cp, 0, &count, stack);
                         for (i = 0; i < count; i++) {
@@ -1833,7 +1833,7 @@ do_mcalled_macro:
             }
         }
     }
-        
+
     /* Only thing left is an implied .WORD directive */
     /*JH: fall through in case of illegal opcode, illegal label! */
     free(label);

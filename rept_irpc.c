@@ -200,7 +200,7 @@ STREAM_VTBL     irp_stream_vtbl = {
 static char *get_irp_sym (char *cp, char **endcp, int *islocal)
 {
     char *ret = NULL;
-    
+
     cp = skipwhite(cp);
     if (*cp == '<') {
         ret = get_symbol (cp + 1, &cp, islocal);

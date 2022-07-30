@@ -322,7 +322,7 @@ void padto(
 char *defext (char *fn, const char *ext)
 {
     char *ret;
-    
+
     if (strchr (fn, '.'))
         return fn;
     ret = realloc (fn, strlen (fn) + strlen (ext) + 2);

@@ -178,7 +178,7 @@ void report(
         return;                        /* Don't report now. */
 
     errline = 1;
-    
+
     if (str) {
         name = str->name;
         line = str->line;
