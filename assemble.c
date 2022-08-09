@@ -2,6 +2,7 @@
 
 
 #include <stdlib.h>
+#include <ctype.h>
 #include <string.h>
 
 #include "assemble.h"                  /* my own definitions */
@@ -1295,6 +1296,86 @@ do_mcalled_macro:
                         free (rad50);
                     }
                     return 1;
+
+                case P_PACKED:
+#define PACKED_POSITIVE 0x0C
+#define PACKED_NEGATIVE 0x0D
+#define PACKED_UNSIGNED 0x0F
+                    {
+                        int sign;       /* The sign comes at the end */
+
+                        cp = skipwhite(cp);
+
+                        if (*cp == '+') {
+                            sign = PACKED_POSITIVE;
+                            cp++;
+                        } else if (*cp == '-') {
+                            sign = PACKED_NEGATIVE;
+                            cp++;
+                        } else {
+                            sign = PACKED_UNSIGNED;
+                        }
+
+                        /* Count number of digits */
+                        int ndigits = 0;
+                        for (char *tmp = cp;
+                                isdigit((unsigned char )*tmp);
+                                tmp++) {
+                            ndigits++;
+                        }
+
+                        if (ndigits > 31) {
+                            report(stack->top, "Too many packed decimal digits\n");
+                            return 1;
+                        }
+
+                        /* If the number of digits is even,
+                         * prefix an imaginary zero. */
+                        int nybbles = !(ndigits % 2);
+                        int byte = 0;
+
+                        while (isdigit((unsigned char)*cp)) {
+                            int value = *cp - '0';
+                            byte = (byte << 4) + value;
+                            nybbles++;
+                            if ((nybbles % 2) == 0) {
+                                store_word(stack->top, tr, 1, byte);
+                                byte = 0;
+                            }
+                            cp++;
+                        }
+
+                        /* Append the sign, making an even number of nybbles. */
+                        byte = (byte << 4) + sign;
+                        store_word(stack->top, tr, 1, byte);
+
+                        /* Maybe store the number of digits into a symbol. */
+                        cp = skipdelim(cp);
+                        if (!EOL(*cp)) {
+                            int islocal;
+
+                            label = get_symbol(cp, &cp, &islocal);
+
+                            if (label == NULL) {
+                                report(stack->top, "Bad .PACKED syntax: symbol name expected\n");
+                                return 0;
+                            }
+
+                            /* Check if already defined.
+                             * TODO: maybe add_sym() should check that? */
+                            SYMBOL *sym;
+                            if ((sym = lookup_sym(label, &symbol_st)) &&
+                                    (sym->flags & SYMBOLFLAG_PERMANENT)) {
+                                report(stack->top, "Symbol '%s' already defined\n", label);
+                                return 0;
+                            }
+                            add_sym(label, ndigits, SYMBOLFLAG_DEFINITION | islocal, &absolute_section,
+                                    &symbol_st);
+                            free(label);
+                        }
+
+                    }
+                    return CHECK_EOL;
 
                 default:
                     report(stack->top, "Unimplemented directive %s\n", op->label);

@@ -27,6 +27,7 @@ TESTS="test-asciz \
     test-mcall-file \
     test-opcodes \
     test-operands \
+    test-packed \
     test-prec \
     test-psect \
     test-rad50 \

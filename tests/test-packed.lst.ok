@@ -1,0 +1,65 @@
+       1                                ;;;;
+       2                                ;
+       3                                ; Test the packed decimals.
+       4                                ;
+       5                                        .list   hex     ; Not yet supported...
+       6                                
+       7 000000    017                          .packed ,       u0
+       8 000001    014                          .packed +,      p0
+       9 000002    015                          .packed -,      n0
+      10                                
+      11 000003    017                          .packed 0,      u0len
+      12 000004    014                          .packed +0,     p0len
+      13 000005    015                          .packed -0,     n0len
+      14                                
+      15 000006    037                          .packed 1,      u1len
+      16 000007    034                          .packed +1,     p1len
+      17 000010    035                          .packed -1,     n1len
+      18                                
+      19 000011    001     057                  .packed 12,     u12len
+      20 000013    001     055                  .packed -12,    n12len
+      21 000015    001     054                  .packed +12,    p12len
+      22                                
+      23 000017    022     077                  .packed 123,    u123len
+      24 000021    001     043     117          .packed 1234,   u124len
+      25 000024    022     064     137          .packed 12345,  u125len
+      26                                
+test-packed.mac:27: ***ERROR Symbol 'LAB' already defined
+      27 000027    061     101     137  lab:    .packed 31415,  lab     ; M error (multiply defined)
+test-packed.mac:28: ***ERROR Symbol 'L2' already defined
+      28 000032    057                  l2::    .packed 2,l2            ; M error (multiply defined)
+      29        000003                  l3 = 3
+      30 000033    077                          .packed 3,l3            ; redef'n ok
+      31        000004                  l4 == 4
+      32 000034    117                          .packed 4,l4            ; redef'n ok
+      33        000005                  l5 =: 5                         ; M error; why???
+test-packed.mac:34: ***ERROR Symbol 'L5' already defined
+      34 000035    137                          .packed 5,l5            ; M error
+      35                                
+      36 000036    022     064     126          .packed 1234567890123456789012345678901
+         000041    170     220     022  
+         000044    064     126     170  
+         000047    220     022     064  
+         000052    126     170     220  
+         000055    037                  
+      37                                        ; too long:
+test-packed.mac:38: ***ERROR Too many packed decimal digits
+      38                                        .packed 12345678901234567890123456789012
+      39                                
+      40                                        .end
+      40                                
+
+
+Symbol table
+
+.       000056R      001 LAB     000027R      001 P0    = 000000           U0LEN = 000001           U1LEN = 000001           
+L2      000032RG     001 N0    = 000000           P0LEN = 000001           U123LE= 000003           
+L3    = 000001           N0LEN = 000001           P12LEN= 000002           U124LE= 000004           
+L4    = 000001 G         N12LEN= 000002           P1LEN = 000001           U125LE= 000005           
+L5    = 000005           N1LEN = 000001           U0    = 000000           U12LEN= 000002           
+
+
+Program sections:
+
+. ABS.  000000    000   (RW,I,GBL,ABS,OVR,NOSAV)
+        000056    001   (RW,I,LCL,REL,CON,NOSAV)
