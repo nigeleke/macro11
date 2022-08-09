@@ -121,16 +121,22 @@ test-prec.mac:100: ***ERROR Invalid expression in .WORD
      101                                
      102 000150 000001  000002  000003          1,2,3
      103 000156 000000G 000000G 000000G         .1,.2,.3
-     103                                
+     104                                
+     105                                ; Strange cases for ^R operator.  It turns out extra RAD50 characters
+     106                                ; are ignored; processing starts at the next non-RAD50 character.
+     107 000164 070254                  	.word	^rRAD50CHARACTERS ; 070254 extra characters ignored
+     108 000166 000001                  	.word	^r  A..EXTRA	; 000001 extra characters ignored
+     109 000170 000002                  	.word	^r  A..EXTRA+1	; 000002 extra characters ignored
+     109                                
 
 
 Symbol table
 
 $     = ****** GX        .1    = ****** GX        .3    = ****** GX        FIVE  = 000005           
-.       000164R      001 .2    = ****** GX        A       000030R      001 NAME  = ****** G         
+.       000172R      001 .2    = ****** GX        A       000030R      001 NAME  = ****** G         
 
 
 Program sections:
 
 . ABS.  000000    000   (RW,I,GBL,ABS,OVR,NOSAV)
-        000164    001   (RW,I,LCL,REL,CON,NOSAV)
+        000172    001   (RW,I,LCL,REL,CON,NOSAV)

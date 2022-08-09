@@ -1249,8 +1249,14 @@ EX_TREE        *parse_unary(
                 cp += 2; /* bracketed range is an extension */
                 if (brackrange(cp, &start, &len, &endcp))
                     value = rad50(cp + start, NULL);
-                else
+                else {
                     value = rad50(cp, &endcp);
+                    /* It turns out that ^R allows extra characters;
+                     * it will stop consuming input at the first
+                     * non-RAD50 character. */
+                    while (ascii2rad50 (*endcp) != -1)
+                        endcp++;
+                }
                 tp = new_ex_lit(value);
                 tp->cp = endcp;
                 return tp;
