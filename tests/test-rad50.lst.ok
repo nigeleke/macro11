@@ -21,12 +21,12 @@
       21 000012 003223  014716          	.rad50	/ABCDEF/	; Packs ABC into first word, DEF into
       22                                				; second word.
       23 000016 003255                  	.rad50	/AB/<35>	; stores 3255 in one word
-test-rad50.mac:24: ***ERROR invalid character '?'
-test-rad50.mac:24: ***ERROR invalid character '!'
-test-rad50.mac:24: ***ERROR invalid character '='
+test-rad50.mac:24: ***ERROR Invalid character '?'
+test-rad50.mac:24: ***ERROR Invalid character '!'
+test-rad50.mac:24: ***ERROR Invalid character '='
       24 000020 000000                  	.rad50	/?!=/ 		; invalid characters
 test-rad50.mac:25: ***ERROR Invalid character value 50
-test-rad50.mac:25: ***ERROR Invalid character value 37777777777
+test-rad50.mac:25: ***ERROR Invalid character value 177777
       25 000022 000000                  	.rad50 <0><50><-1>	; invalid characters
       26        000001                  	CHR1=1
       27        000002                  	CHR2=2

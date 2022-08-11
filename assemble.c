@@ -57,7 +57,8 @@ static unsigned * assemble_rad50 (
                 report(stack->top, "Expression must be constant\n");
                 radstr[len++] = 0;
             } else if (value->data.lit >= 050) {
-                report(stack->top, "Invalid character value %o\n", value->data.lit);
+                report(stack->top, "Invalid character value %o\n",
+                       value->data.lit & 0xFFFF);
                 radstr[len++] = 0;
             } else {
                 radstr[len++] = value->data.lit;
