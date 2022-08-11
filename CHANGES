@@ -2,6 +2,7 @@
         version 0.9wip:
         - Fix ^R to ignore RAD50 characters after the first three.(Paul Koning)
         - Add .packed directive.
+        - Better check for bad symbol redefinitions.
 
 07.07.2022: Rhialto
         version 0.8:

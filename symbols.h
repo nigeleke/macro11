@@ -34,7 +34,7 @@ typedef struct symbol {
     unsigned        value;      /* Symbol value */
     int             stmtno;     /* Statement number of symbol's definition */
     unsigned        flags;      /* Symbol flags */
-#define SYMBOLFLAG_PERMANENT 1  /* Symbol may not be redefined */
+#define SYMBOLFLAG_PERMANENT 1  /* Symbol may not be redefined (i.e. a label) */
 #define SYMBOLFLAG_GLOBAL 2     /* Symbol is global */
 #define SYMBOLFLAG_WEAK 4       /* Symbol definition is weak */
 #define SYMBOLFLAG_DEFINITION 8 /* Symbol is a global definition, not reference */
@@ -380,12 +380,15 @@ extern SYMBOL_TABLE undefined_st;       /* The symbols which may be undefined */
 int             hash_name(
     char *label);
 
+struct stream;
+
 SYMBOL         *add_sym(
     char *label,
     unsigned value,
     unsigned flags,
     SECTION *section,
-    SYMBOL_TABLE *table);
+    SYMBOL_TABLE *table,
+    struct stream *stream);
 SYMBOL         *first_sym(
     SYMBOL_TABLE *table,
     SYMBOL_ITER *iter);

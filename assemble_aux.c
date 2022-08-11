@@ -215,7 +215,7 @@ void implicit_gbl(
                         /* either make the undefined symbol into an
                            implicit global */
                         add_sym(value->data.symbol->label, 0, SYMBOLFLAG_GLOBAL,
-                                &absolute_section, &implicit_st);
+                                &absolute_section, &implicit_st, NULL);
                     } else {
                         /* or add it to the undefined symbol table,
                            purely for listing purposes.
@@ -224,10 +224,10 @@ void implicit_gbl(
 #define ADD_UNDEFINED_SYMBOLS_TO_MAIN_SYMBOL_TABLE      0
 #if ADD_UNDEFINED_SYMBOLS_TO_MAIN_SYMBOL_TABLE
                         add_sym(value->data.symbol->label, 0, SYMBOLFLAG_UNDEFINED,
-                                &absolute_section, &symbol_st);
+                                &absolute_section, &symbol_st, stack);
 #else
                         add_sym(value->data.symbol->label, 0, SYMBOLFLAG_UNDEFINED,
-                                &absolute_section, &undefined_st);
+                                &absolute_section, &undefined_st, NULL);
 #endif
                     }
                 }
@@ -266,7 +266,8 @@ void migrate_implicit(
             continue;                  // It's already in there.  Great.
         }
         isym->flags |= SYMBOLFLAG_IMPLICIT_GLOBAL;
-        sym = add_sym(isym->label, isym->value, isym->flags, isym->section, &symbol_st);
+        sym = add_sym(isym->label, isym->value, isym->flags, isym->section,
+                      &symbol_st, NULL);
         // Just one other thing - migrate the stmtno
         sym->stmtno = isym->stmtno;
     }
@@ -288,7 +289,8 @@ void migrate_undefined(
             continue;                  /* It's already in there.  Great. */
         }
         isym->flags |= SYMBOLFLAG_UNDEFINED; /* Just in case */
-        sym = add_sym(isym->label, isym->value, isym->flags, isym->section, &symbol_st);
+        sym = add_sym(isym->label, isym->value, isym->flags, isym->section,
+                      &symbol_st, NULL);
         /* Just one other thing - migrate the stmtno */
         sym->stmtno = isym->stmtno;
     }

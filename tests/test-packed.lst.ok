@@ -24,16 +24,16 @@
       24 000021    001     043     117          .packed 1234,   u124len
       25 000024    022     064     137          .packed 12345,  u125len
       26                                
-test-packed.mac:27: ***ERROR Symbol 'LAB' already defined
+test-packed.mac:27: ***ERROR Redefining permanent symbol 'LAB'
       27 000027    061     101     137  lab:    .packed 31415,  lab     ; M error (multiply defined)
-test-packed.mac:28: ***ERROR Symbol 'L2' already defined
+test-packed.mac:28: ***ERROR Redefining permanent symbol 'L2'
       28 000032    057                  l2::    .packed 2,l2            ; M error (multiply defined)
       29        000003                  l3 = 3
       30 000033    077                          .packed 3,l3            ; redef'n ok
       31        000004                  l4 == 4
       32 000034    117                          .packed 4,l4            ; redef'n ok
       33        000005                  l5 =: 5                         ; M error; why???
-test-packed.mac:34: ***ERROR Symbol 'L5' already defined
+test-packed.mac:34: ***ERROR Redefining permanent symbol 'L5'
       34 000035    137                          .packed 5,l5            ; M error
       35                                
       36 000036    022     064     126          .packed 1234567890123456789012345678901
@@ -46,8 +46,23 @@ test-packed.mac:34: ***ERROR Symbol 'L5' already defined
 test-packed.mac:38: ***ERROR Too many packed decimal digits
       38                                        .packed 12345678901234567890123456789012
       39                                
-      40                                        .end
-      40                                
+      40                                ; In the original, .ntype must occur in a macro.
+      41                                ; As an extension, we allow it also outside macros.
+      42                                        .macro  name arg1,arg2
+      43                                        .narg   lab             ; redefinition
+      44                                        .nchr   lab,//          ; redefinition
+      45                                        .ntype  lab,#3          ; redefinition
+      46                                        .endm
+      47                                
+      48 000056                                 name
+test-packed.mac:48->NAME:1: ***ERROR Redefining permanent symbol 'LAB'
+       1        000000                          .narg   lab             ; redefinition
+test-packed.mac:48->NAME:2: ***ERROR Redefining permanent symbol 'LAB'
+       2                                        .nchr   lab,//          ; redefinition
+test-packed.mac:48->NAME:3: ***ERROR Redefining permanent symbol 'LAB'
+       3                                        .ntype  lab,#3          ; redefinition
+      49                                        .end
+      49                                
 
 
 Symbol table

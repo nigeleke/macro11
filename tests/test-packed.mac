@@ -37,4 +37,13 @@ l5 =: 5                         ; M error; why???
         ; too long:
         .packed 12345678901234567890123456789012
 
+; In the original, .ntype must occur in a macro.
+; As an extension, we allow it also outside macros.
+        .macro  name arg1,arg2
+        .narg   lab             ; redefinition
+        .nchr   lab,//          ; redefinition
+        .ntype  lab,#3          ; redefinition
+        .endm
+
+        name
         .end

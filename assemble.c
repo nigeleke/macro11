@@ -215,7 +215,8 @@ O    75                                         .endc
                 ncp++;
             }
 
-            sym = add_sym(label, DOT, flag, current_pc->section, &symbol_st);
+            sym = add_sym(label, DOT, flag, current_pc->section, &symbol_st,
+                          stack->top);
             cp = ncp;
 
             if (sym == NULL)
@@ -315,9 +316,11 @@ O    75                                         .endc
 
             /* regular symbols */
             if (value->type == EX_LIT) {
-                sym = add_sym(label, value->data.lit, flags, &absolute_section, &symbol_st);
+                sym = add_sym(label, value->data.lit, flags, &absolute_section,
+                              &symbol_st, stack->top);
             } else if (value->type == EX_SYM || value->type == EX_TEMP_SYM) {
-                sym = add_sym(label, value->data.symbol->value, flags, value->data.symbol->section, &symbol_st);
+                sym = add_sym(label, value->data.symbol->value, flags,
+                              value->data.symbol->section, &symbol_st, stack->top);
             } else {
                 report(stack->top, "Complex expression cannot be assigned to a symbol\n");
 
@@ -325,7 +328,8 @@ O    75                                         .endc
                     /* This may work better in pass 2 - something in
                        RT-11 monitor needs the symbol to apear to be
                        defined even if I can't resolve its value. */
-                    sym = add_sym(label, 0, SYMBOLFLAG_UNDEFINED, &absolute_section, &symbol_st);
+                    sym = add_sym(label, 0, SYMBOLFLAG_UNDEFINED,
+                                  &absolute_section, &symbol_st, stack->top);
                 } else
                     sym = NULL;
             }
@@ -521,8 +525,8 @@ do_mcalled_macro:
 
                         mstr = (MACRO_STREAM *) str;
 
-                        add_sym(label, mstr->nargs, SYMBOLFLAG_DEFINITION | islocal, &absolute_section,
-                                &symbol_st);
+                        add_sym(label, mstr->nargs, SYMBOLFLAG_DEFINITION | islocal,
+                                &absolute_section, &symbol_st, stack->top);
                         free(label);
                         list_value(stack->top, mstr->nargs);
                         return CHECK_EOL;
@@ -544,8 +548,8 @@ do_mcalled_macro:
 
                         string = getstring(cp, &cp);
 
-                        add_sym(label, strlen(string), SYMBOLFLAG_DEFINITION | islocal, &absolute_section,
-                                &symbol_st);
+                        add_sym(label, strlen(string), SYMBOLFLAG_DEFINITION | islocal,
+                                &absolute_section, &symbol_st, stack->top);
                         free(label);
                         free(string);
                         return CHECK_EOL;
@@ -572,7 +576,8 @@ do_mcalled_macro:
                             return 0;
                         }
 
-                        add_sym(label, mode.type, SYMBOLFLAG_DEFINITION | islocal, &absolute_section, &symbol_st);
+                        add_sym(label, mode.type, SYMBOLFLAG_DEFINITION | islocal,
+                                &absolute_section, &symbol_st, stack->top);
                         free_addr_mode(&mode);
                         free(label);
 
@@ -1079,7 +1084,9 @@ do_mcalled_macro:
                                 sect->size = 0;
                                 sect->type = SECTION_USER;
                                 sections[sector++] = sect;
-                                sectsym = add_sym(label, 0, SYMBOLFLAG_DEFINITION, sect, &section_st);
+                                sectsym = add_sym(label, 0,
+                                        SYMBOLFLAG_DEFINITION, sect,
+                                        &section_st, stack->top);
 
                                 /* page 6-41 table 6-5 */
                                 if (op->value == P_PSECT) {
@@ -1188,8 +1195,9 @@ do_mcalled_macro:
                                 sym->flags |= SYMBOLFLAG_GLOBAL | (op->value == P_WEAK ? SYMBOLFLAG_WEAK : 0);
                             } else
                                 sym = add_sym(label, 0,
-                                              SYMBOLFLAG_GLOBAL | (op->value == P_WEAK ? SYMBOLFLAG_WEAK : 0),
-                                              &absolute_section, &symbol_st);
+                                        SYMBOLFLAG_GLOBAL |
+                                            (op->value == P_WEAK ? SYMBOLFLAG_WEAK : 0),
+                                        &absolute_section, &symbol_st, stack->top);
 
                             free(label);
                             cp = skipdelim(ncp);
@@ -1361,16 +1369,8 @@ do_mcalled_macro:
                                 return 0;
                             }
 
-                            /* Check if already defined.
-                             * TODO: maybe add_sym() should check that? */
-                            SYMBOL *sym;
-                            if ((sym = lookup_sym(label, &symbol_st)) &&
-                                    (sym->flags & SYMBOLFLAG_PERMANENT)) {
-                                report(stack->top, "Symbol '%s' already defined\n", label);
-                                return 0;
-                            }
-                            add_sym(label, ndigits, SYMBOLFLAG_DEFINITION | islocal, &absolute_section,
-                                    &symbol_st);
+                            add_sym(label, ndigits, SYMBOLFLAG_DEFINITION | islocal,
+                                    &absolute_section, &symbol_st, stack->top);
                             free(label);
                         }
 

@@ -53,14 +53,14 @@ dump_sym(SYMBOL *sym)
 }
 
 void
-check_sym_invariants(SYMBOL *sym, char *file, int line)
+check_sym_invariants(SYMBOL *sym, char *file, int line, STREAM *stream)
 {
     int dump = 0;
 
     if (sym->section == &instruction_section) {
         /* The instructions use the flags field differently */
         if ((sym->flags & ~OC_MASK) != 0) {
-            report(NULL, "%s %d: Instruction symbol %s has wrong flags\n", file, line, sym->label);
+            report(stream, "%s %d: Instruction symbol %s has wrong flags\n", file, line, sym->label);
             dump_sym(sym);
         }
         return;
@@ -92,31 +92,31 @@ check_sym_invariants(SYMBOL *sym, char *file, int line)
         case SYMBOLFLAG_UNDEFINED:
             break;
         default:
-            report(NULL, "%s %d: Symbol %s definedness is inconsistent\n", file, line, sym->label);
+            report(stream, "%s %d: Symbol %s definedness is inconsistent\n", file, line, sym->label);
             dump++;
     }
 
     if ( (sym->flags & SYMBOLFLAG_IMPLICIT_GLOBAL) &&
         !(sym->flags & SYMBOLFLAG_GLOBAL)) {
-        report(NULL, "%s %d: Symbol %s globalness is inconsistent\n", file, line, sym->label);
+        report(stream, "%s %d: Symbol %s globalness is inconsistent\n", file, line, sym->label);
         dump++;
     }
 
     if ( (sym->flags & SYMBOLFLAG_LOCAL) &&
          (sym->flags & SYMBOLFLAG_GLOBAL)) {
-        report(NULL, "%s %d: Symbol %s is local and global\n", file, line, sym->label);
+        report(stream, "%s %d: Symbol %s is local and global\n", file, line, sym->label);
         dump++;
     }
 
     if ( (sym->flags & SYMBOLFLAG_PERMANENT) &&
         !(sym->flags & SYMBOLFLAG_DEFINITION)) {
-        report(NULL, "%s %d: Symbol %s is permanent without definition\n", file, line, sym->label);
+        report(stream, "%s %d: Symbol %s is permanent without definition\n", file, line, sym->label);
         dump++;
     }
 
     if ( (sym->flags & SYMBOLFLAG_WEAK) &&
         !(sym->flags & SYMBOLFLAG_GLOBAL)) {
-        report(NULL, "%s %d: Symbol %s weak/global is inconsistent\n", file, line, sym->label);
+        report(stream, "%s %d: Symbol %s weak/global is inconsistent\n", file, line, sym->label);
         dump++;
     }
 
@@ -183,7 +183,7 @@ void free_sym(
     SYMBOL *sym)
 {
     if (sym->label) {
-        check_sym_invariants(sym, __FILE__, __LINE__);
+        check_sym_invariants(sym, __FILE__, __LINE__, NULL);
         free(sym->label);
         sym->label = NULL;
     }
@@ -200,7 +200,7 @@ void remove_sym(
                    *symp;
     int             hash;
 
-    check_sym_invariants(sym, __FILE__, __LINE__);
+    check_sym_invariants(sym, __FILE__, __LINE__, NULL);
     hash = hash_name(sym->label);
     prevp = &table->hash[hash];
     while (symp = *prevp, symp != NULL && symp != sym)
@@ -226,7 +226,7 @@ SYMBOL         *lookup_sym(
         sym = sym->next;
 
     if (sym) {
-        check_sym_invariants(sym, __FILE__, __LINE__);
+        check_sym_invariants(sym, __FILE__, __LINE__, NULL);
     }
     return sym;
 }
@@ -273,7 +273,7 @@ void add_table(
 
     sym->next = table->hash[hash];
     table->hash[hash] = sym;
-    check_sym_invariants(sym, __FILE__, __LINE__);
+    check_sym_invariants(sym, __FILE__, __LINE__, NULL);
 }
 
 /* add_sym - used throughout to add or update symbols in a symbol
@@ -284,7 +284,8 @@ SYMBOL         *add_sym(
     unsigned value,
     unsigned flags,
     SECTION *section,
-    SYMBOL_TABLE *table)
+    SYMBOL_TABLE *table,
+    STREAM *stream)
 {
     SYMBOL         *sym;
     char            label[SYMMAX_MAX + 1];      // big size
@@ -303,19 +304,31 @@ SYMBOL         *add_sym(
     if (sym != NULL) {
         // A symbol registered as "undefined" can be changed.
         //
-        check_sym_invariants(sym, __FILE__, __LINE__);
+        check_sym_invariants(sym, __FILE__, __LINE__, stream);
+
+        if (sym->flags & SYMBOLFLAG_PERMANENT) {
+            if (flags & SYMBOLFLAG_PERMANENT) {
+                if (sym->value != value || sym->section != section) {
+                    report(stream, "Phase error: '%s'\n", label);
+                    return NULL;
+                }
+            } else {
+                report(stream, "Redefining permanent symbol '%s'\n", label);
+                return NULL;
+            }
+        }
 
         if ((sym->flags & SYMBOLFLAG_UNDEFINED) && !(flags & SYMBOLFLAG_UNDEFINED)) {
             sym->flags &= ~(SYMBOLFLAG_PERMANENT | SYMBOLFLAG_UNDEFINED);
         }
         else if (!(sym->flags & SYMBOLFLAG_UNDEFINED) && (flags & SYMBOLFLAG_UNDEFINED)) {
-            report(NULL, "INTERNAL ERROR: Turning defined symbol '%s' into undefined\n", label);
+            report(stream, "INTERNAL ERROR: Turning defined symbol '%s' into undefined\n", label);
             return sym;
         }
         /* Check for compatible definition */
         else if (sym->section == section && sym->value == value) {
             sym->flags |= flags;       /* Merge flags quietly */
-            check_sym_invariants(sym, __FILE__, __LINE__);
+            check_sym_invariants(sym, __FILE__, __LINE__, stream);
             return sym;                /* 's okay */
         }
 
@@ -324,10 +337,11 @@ SYMBOL         *add_sym(
             sym->value = value;
             sym->flags |= flags;
             sym->section = section;
-            check_sym_invariants(sym, __FILE__, __LINE__);
+            check_sym_invariants(sym, __FILE__, __LINE__, stream);
             return sym;
         }
 
+        report(stream, "INTERNAL ERROR: Bad symbol '%s' redefinition\n", label);
         return NULL;                   /* Bad symbol redefinition */
     }
 
@@ -347,308 +361,310 @@ SYMBOL         *add_sym(
 void add_symbols(
     SECTION *current_section)
 {
-    current_pc = add_sym(".", 0, SYMBOLFLAG_DEFINITION, current_section, &symbol_st);
+#define ADD_SYM(a,b,c,d,e) add_sym(a,b,c,d,e,NULL)
+
+    current_pc = ADD_SYM(".", 0, SYMBOLFLAG_DEFINITION, current_section, &symbol_st);
 
 #define S (SYMBOLFLAG_PERMANENT | SYMBOLFLAG_DEFINITION)
 
-    reg_sym[0] = add_sym("R0", 0, S, &register_section, &system_st);
-    reg_sym[1] = add_sym("R1", 1, S, &register_section, &system_st);
-    reg_sym[2] = add_sym("R2", 2, S, &register_section, &system_st);
-    reg_sym[3] = add_sym("R3", 3, S, &register_section, &system_st);
-    reg_sym[4] = add_sym("R4", 4, S, &register_section, &system_st);
-    reg_sym[5] = add_sym("R5", 5, S, &register_section, &system_st);
-    reg_sym[6] = add_sym("SP", 6, S, &register_section, &system_st);
-    reg_sym[7] = add_sym("PC", 7, S, &register_section, &system_st);
+    reg_sym[0] = ADD_SYM("R0", 0, S, &register_section, &system_st);
+    reg_sym[1] = ADD_SYM("R1", 1, S, &register_section, &system_st);
+    reg_sym[2] = ADD_SYM("R2", 2, S, &register_section, &system_st);
+    reg_sym[3] = ADD_SYM("R3", 3, S, &register_section, &system_st);
+    reg_sym[4] = ADD_SYM("R4", 4, S, &register_section, &system_st);
+    reg_sym[5] = ADD_SYM("R5", 5, S, &register_section, &system_st);
+    reg_sym[6] = ADD_SYM("SP", 6, S, &register_section, &system_st);
+    reg_sym[7] = ADD_SYM("PC", 7, S, &register_section, &system_st);
 
     //JH: symbols longer than current SYMMAX will be truncated. SYMMAX=6 is minimum!
 
-    add_sym(".ASCII", P_ASCII, S, &pseudo_section, &system_st);
-    add_sym(".ASCIZ", P_ASCIZ, S, &pseudo_section, &system_st);
-    add_sym(".ASECT", P_ASECT, S, &pseudo_section, &system_st);
-    add_sym(".BLKB", P_BLKB, S, &pseudo_section, &system_st);
-    add_sym(".BLKW", P_BLKW, S, &pseudo_section, &system_st);
-    add_sym(".BYTE", P_BYTE, S, &pseudo_section, &system_st);
-    add_sym(".CSECT", P_CSECT, S, &pseudo_section, &system_st);
-    add_sym(".CROSS", P_CROSS, S, &pseudo_section, &system_st);
-    add_sym(".DSABL", P_DSABL, S, &pseudo_section, &system_st);
-    add_sym(".ENABL", P_ENABL, S, &pseudo_section, &system_st);
-    add_sym(".END", P_END, S, &pseudo_section, &system_st);
-    add_sym(".ENDC", P_ENDC, S, &pseudo_section, &system_st);
-    add_sym(".ENDM", P_ENDM, S, &pseudo_section, &system_st);
-    add_sym(".ENDR", P_ENDR, S, &pseudo_section, &system_st);
-    add_sym(".EOT", P_EOT, S, &pseudo_section, &system_st);
-    add_sym(".ERROR", P_ERROR, S, &pseudo_section, &system_st);
-    add_sym(".EVEN", P_EVEN, S, &pseudo_section, &system_st);
-    add_sym(".FLT2", P_FLT2, S, &pseudo_section, &system_st);
-    add_sym(".FLT4", P_FLT4, S, &pseudo_section, &system_st);
-    add_sym(".GLOBL", P_GLOBL, S, &pseudo_section, &system_st);
-    add_sym(".IDENT", P_IDENT, S, &pseudo_section, &system_st);
-    add_sym(".IF", P_IF, S, &pseudo_section, &system_st);
-    add_sym(".IFDF", P_IFDF, S, &pseudo_section, &system_st);
-    add_sym(".IFNDF", P_IFDF, S, &pseudo_section, &system_st);
-    add_sym(".IFF", P_IFF, S, &pseudo_section, &system_st);
-    add_sym(".IFT", P_IFT, S, &pseudo_section, &system_st);
-    add_sym(".IFTF", P_IFTF, S, &pseudo_section, &system_st);
-    add_sym(".IIF", P_IIF, S, &pseudo_section, &system_st);
-    add_sym(".INCLUDE", P_INCLUDE, S, &pseudo_section, &system_st);
-    add_sym(".IRP", P_IRP, S, &pseudo_section, &system_st);
-    add_sym(".IRPC", P_IRPC, S, &pseudo_section, &system_st);
-    add_sym(".LIBRARY", P_LIBRARY, S, &pseudo_section, &system_st);
-    add_sym(".LIMIT", P_LIMIT, S, &pseudo_section, &system_st);
-    add_sym(".LIST", P_LIST, S, &pseudo_section, &system_st);
-    add_sym(".MCALL", P_MCALL, S, &pseudo_section, &system_st);
-    add_sym(".MDELE", P_MDELETE, S, &pseudo_section, &system_st);
-    add_sym(".MEXIT", P_MEXIT, S, &pseudo_section, &system_st);
-    add_sym(".NARG", P_NARG, S, &pseudo_section, &system_st);
-    add_sym(".NCHR", P_NCHR, S, &pseudo_section, &system_st);
-    add_sym(".NLIST", P_NLIST, S, &pseudo_section, &system_st);
-    add_sym(".NOCRO", P_NOCROSS, S, &pseudo_section, &system_st);
-    add_sym(".NTYPE", P_NTYPE, S, &pseudo_section, &system_st);
-    add_sym(".ODD", P_ODD, S, &pseudo_section, &system_st);
-    add_sym(".PACKED", P_PACKED, S, &pseudo_section, &system_st);
-    add_sym(".PAGE", P_PAGE, S, &pseudo_section, &system_st);
-    add_sym(".PRINT", P_PRINT, S, &pseudo_section, &system_st);
-    add_sym(".PSECT", P_PSECT, S, &pseudo_section, &system_st);
-    add_sym(".RADIX", P_RADIX, S, &pseudo_section, &system_st);
-    add_sym(".RAD50", P_RAD50, S, &pseudo_section, &system_st);
-    add_sym(".REM", P_REM, S, &pseudo_section, &system_st);
-    add_sym(".REPT", P_REPT, S, &pseudo_section, &system_st);
-    add_sym(".RESTORE", P_RESTORE, S, &pseudo_section, &system_st);
-    add_sym(".SAVE", P_SAVE, S, &pseudo_section, &system_st);
-    add_sym(".SBTTL", P_SBTTL, S, &pseudo_section, &system_st);
-    add_sym(".TITLE", P_TITLE, S, &pseudo_section, &system_st);
-    add_sym(".WORD", P_WORD, S, &pseudo_section, &system_st);
-    add_sym(".MACRO", P_MACRO, S, &pseudo_section, &system_st);
-    add_sym(".WEAK", P_WEAK, S, &pseudo_section, &system_st);
+    ADD_SYM(".ASCII", P_ASCII, S, &pseudo_section, &system_st);
+    ADD_SYM(".ASCIZ", P_ASCIZ, S, &pseudo_section, &system_st);
+    ADD_SYM(".ASECT", P_ASECT, S, &pseudo_section, &system_st);
+    ADD_SYM(".BLKB", P_BLKB, S, &pseudo_section, &system_st);
+    ADD_SYM(".BLKW", P_BLKW, S, &pseudo_section, &system_st);
+    ADD_SYM(".BYTE", P_BYTE, S, &pseudo_section, &system_st);
+    ADD_SYM(".CSECT", P_CSECT, S, &pseudo_section, &system_st);
+    ADD_SYM(".CROSS", P_CROSS, S, &pseudo_section, &system_st);
+    ADD_SYM(".DSABL", P_DSABL, S, &pseudo_section, &system_st);
+    ADD_SYM(".ENABL", P_ENABL, S, &pseudo_section, &system_st);
+    ADD_SYM(".END", P_END, S, &pseudo_section, &system_st);
+    ADD_SYM(".ENDC", P_ENDC, S, &pseudo_section, &system_st);
+    ADD_SYM(".ENDM", P_ENDM, S, &pseudo_section, &system_st);
+    ADD_SYM(".ENDR", P_ENDR, S, &pseudo_section, &system_st);
+    ADD_SYM(".EOT", P_EOT, S, &pseudo_section, &system_st);
+    ADD_SYM(".ERROR", P_ERROR, S, &pseudo_section, &system_st);
+    ADD_SYM(".EVEN", P_EVEN, S, &pseudo_section, &system_st);
+    ADD_SYM(".FLT2", P_FLT2, S, &pseudo_section, &system_st);
+    ADD_SYM(".FLT4", P_FLT4, S, &pseudo_section, &system_st);
+    ADD_SYM(".GLOBL", P_GLOBL, S, &pseudo_section, &system_st);
+    ADD_SYM(".IDENT", P_IDENT, S, &pseudo_section, &system_st);
+    ADD_SYM(".IF", P_IF, S, &pseudo_section, &system_st);
+    ADD_SYM(".IFDF", P_IFDF, S, &pseudo_section, &system_st);
+    ADD_SYM(".IFNDF", P_IFDF, S, &pseudo_section, &system_st);
+    ADD_SYM(".IFF", P_IFF, S, &pseudo_section, &system_st);
+    ADD_SYM(".IFT", P_IFT, S, &pseudo_section, &system_st);
+    ADD_SYM(".IFTF", P_IFTF, S, &pseudo_section, &system_st);
+    ADD_SYM(".IIF", P_IIF, S, &pseudo_section, &system_st);
+    ADD_SYM(".INCLUDE", P_INCLUDE, S, &pseudo_section, &system_st);
+    ADD_SYM(".IRP", P_IRP, S, &pseudo_section, &system_st);
+    ADD_SYM(".IRPC", P_IRPC, S, &pseudo_section, &system_st);
+    ADD_SYM(".LIBRARY", P_LIBRARY, S, &pseudo_section, &system_st);
+    ADD_SYM(".LIMIT", P_LIMIT, S, &pseudo_section, &system_st);
+    ADD_SYM(".LIST", P_LIST, S, &pseudo_section, &system_st);
+    ADD_SYM(".MCALL", P_MCALL, S, &pseudo_section, &system_st);
+    ADD_SYM(".MDELE", P_MDELETE, S, &pseudo_section, &system_st);
+    ADD_SYM(".MEXIT", P_MEXIT, S, &pseudo_section, &system_st);
+    ADD_SYM(".NARG", P_NARG, S, &pseudo_section, &system_st);
+    ADD_SYM(".NCHR", P_NCHR, S, &pseudo_section, &system_st);
+    ADD_SYM(".NLIST", P_NLIST, S, &pseudo_section, &system_st);
+    ADD_SYM(".NOCRO", P_NOCROSS, S, &pseudo_section, &system_st);
+    ADD_SYM(".NTYPE", P_NTYPE, S, &pseudo_section, &system_st);
+    ADD_SYM(".ODD", P_ODD, S, &pseudo_section, &system_st);
+    ADD_SYM(".PACKED", P_PACKED, S, &pseudo_section, &system_st);
+    ADD_SYM(".PAGE", P_PAGE, S, &pseudo_section, &system_st);
+    ADD_SYM(".PRINT", P_PRINT, S, &pseudo_section, &system_st);
+    ADD_SYM(".PSECT", P_PSECT, S, &pseudo_section, &system_st);
+    ADD_SYM(".RADIX", P_RADIX, S, &pseudo_section, &system_st);
+    ADD_SYM(".RAD50", P_RAD50, S, &pseudo_section, &system_st);
+    ADD_SYM(".REM", P_REM, S, &pseudo_section, &system_st);
+    ADD_SYM(".REPT", P_REPT, S, &pseudo_section, &system_st);
+    ADD_SYM(".RESTORE", P_RESTORE, S, &pseudo_section, &system_st);
+    ADD_SYM(".SAVE", P_SAVE, S, &pseudo_section, &system_st);
+    ADD_SYM(".SBTTL", P_SBTTL, S, &pseudo_section, &system_st);
+    ADD_SYM(".TITLE", P_TITLE, S, &pseudo_section, &system_st);
+    ADD_SYM(".WORD", P_WORD, S, &pseudo_section, &system_st);
+    ADD_SYM(".MACRO", P_MACRO, S, &pseudo_section, &system_st);
+    ADD_SYM(".WEAK", P_WEAK, S, &pseudo_section, &system_st);
 
 #undef S
 
-    add_sym("ADC", I_ADC, OC_1GEN, &instruction_section, &system_st);
-    add_sym("ADCB", I_ADCB, OC_1GEN, &instruction_section, &system_st);
-    add_sym("ADD", I_ADD, OC_2GEN, &instruction_section, &system_st);
-    add_sym("ASH", I_ASH, OC_ASH, &instruction_section, &system_st);
-    add_sym("ASHC", I_ASHC, OC_ASH, &instruction_section, &system_st);
-    add_sym("ASL", I_ASL, OC_1GEN, &instruction_section, &system_st);
-    add_sym("ASLB", I_ASLB, OC_1GEN, &instruction_section, &system_st);
-    add_sym("ASR", I_ASR, OC_1GEN, &instruction_section, &system_st);
-    add_sym("ASRB", I_ASRB, OC_1GEN, &instruction_section, &system_st);
-    add_sym("BCC", I_BCC, OC_BR, &instruction_section, &system_st);
-    add_sym("BCS", I_BCS, OC_BR, &instruction_section, &system_st);
-    add_sym("BEQ", I_BEQ, OC_BR, &instruction_section, &system_st);
-    add_sym("BGE", I_BGE, OC_BR, &instruction_section, &system_st);
-    add_sym("BGT", I_BGT, OC_BR, &instruction_section, &system_st);
-    add_sym("BHI", I_BHI, OC_BR, &instruction_section, &system_st);
-    add_sym("BHIS", I_BHIS, OC_BR, &instruction_section, &system_st);
-    add_sym("BIC", I_BIC, OC_2GEN, &instruction_section, &system_st);
-    add_sym("BICB", I_BICB, OC_2GEN, &instruction_section, &system_st);
-    add_sym("BIS", I_BIS, OC_2GEN, &instruction_section, &system_st);
-    add_sym("BISB", I_BISB, OC_2GEN, &instruction_section, &system_st);
-    add_sym("BIT", I_BIT, OC_2GEN, &instruction_section, &system_st);
-    add_sym("BITB", I_BITB, OC_2GEN, &instruction_section, &system_st);
-    add_sym("BLE", I_BLE, OC_BR, &instruction_section, &system_st);
-    add_sym("BLO", I_BLO, OC_BR, &instruction_section, &system_st);
-    add_sym("BLOS", I_BLOS, OC_BR, &instruction_section, &system_st);
-    add_sym("BLT", I_BLT, OC_BR, &instruction_section, &system_st);
-    add_sym("BMI", I_BMI, OC_BR, &instruction_section, &system_st);
-    add_sym("BNE", I_BNE, OC_BR, &instruction_section, &system_st);
-    add_sym("BPL", I_BPL, OC_BR, &instruction_section, &system_st);
-    add_sym("BPT", I_BPT, OC_NONE, &instruction_section, &system_st);
-    add_sym("BR", I_BR, OC_BR, &instruction_section, &system_st);
-    add_sym("BVC", I_BVC, OC_BR, &instruction_section, &system_st);
-    add_sym("BVS", I_BVS, OC_BR, &instruction_section, &system_st);
-    add_sym("CALL", I_CALL, OC_1GEN, &instruction_section, &system_st);
-    add_sym("CALLR", I_CALLR, OC_1GEN, &instruction_section, &system_st);
-    add_sym("CCC", I_CCC, OC_NONE, &instruction_section, &system_st);
-    add_sym("CLC", I_CLC, OC_NONE, &instruction_section, &system_st);
-    add_sym("CLN", I_CLN, OC_NONE, &instruction_section, &system_st);
-    add_sym("CLR", I_CLR, OC_1GEN, &instruction_section, &system_st);
-    add_sym("CLRB", I_CLRB, OC_1GEN, &instruction_section, &system_st);
-    add_sym("CLV", I_CLV, OC_NONE, &instruction_section, &system_st);
-    add_sym("CLZ", I_CLZ, OC_NONE, &instruction_section, &system_st);
-    add_sym("CMP", I_CMP, OC_2GEN, &instruction_section, &system_st);
-    add_sym("CMPB", I_CMPB, OC_2GEN, &instruction_section, &system_st);
-    add_sym("COM", I_COM, OC_1GEN, &instruction_section, &system_st);
-    add_sym("COMB", I_COMB, OC_1GEN, &instruction_section, &system_st);
-    add_sym("DEC", I_DEC, OC_1GEN, &instruction_section, &system_st);
-    add_sym("DECB", I_DECB, OC_1GEN, &instruction_section, &system_st);
-    add_sym("DIV", I_DIV, OC_ASH, &instruction_section, &system_st);
-    add_sym("EMT", I_EMT, OC_MARK, &instruction_section, &system_st);
-    add_sym("FADD", I_FADD, OC_1REG, &instruction_section, &system_st);
-    add_sym("FDIV", I_FDIV, OC_1REG, &instruction_section, &system_st);
-    add_sym("FMUL", I_FMUL, OC_1REG, &instruction_section, &system_st);
-    add_sym("FSUB", I_FSUB, OC_1REG, &instruction_section, &system_st);
-    add_sym("HALT", I_HALT, OC_NONE, &instruction_section, &system_st);
-    add_sym("INC", I_INC, OC_1GEN, &instruction_section, &system_st);
-    add_sym("INCB", I_INCB, OC_1GEN, &instruction_section, &system_st);
-    add_sym("IOT", I_IOT, OC_NONE, &instruction_section, &system_st);
-    add_sym("JMP", I_JMP, OC_1GEN, &instruction_section, &system_st);
-    add_sym("JSR", I_JSR, OC_JSR, &instruction_section, &system_st);
-    add_sym("MARK", I_MARK, OC_MARK, &instruction_section, &system_st);
-    add_sym("MED6X", I_MED6X, OC_NONE, &instruction_section, &system_st);
-    add_sym("MED74C", I_MED74C, OC_NONE, &instruction_section, &system_st);
-    add_sym("MFPD", I_MFPD, OC_1GEN, &instruction_section, &system_st);
-    add_sym("MFPI", I_MFPI, OC_1GEN, &instruction_section, &system_st);
-    add_sym("MFPS", I_MFPS, OC_1GEN, &instruction_section, &system_st);
-    add_sym("MOV", I_MOV, OC_2GEN, &instruction_section, &system_st);
-    add_sym("MOVB", I_MOVB, OC_2GEN, &instruction_section, &system_st);
-    add_sym("MTPD", I_MTPD, OC_1GEN, &instruction_section, &system_st);
-    add_sym("MTPI", I_MTPI, OC_1GEN, &instruction_section, &system_st);
-    add_sym("MTPS", I_MTPS, OC_1GEN, &instruction_section, &system_st);
-    add_sym("MUL", I_MUL, OC_ASH, &instruction_section, &system_st);
-    add_sym("NEG", I_NEG, OC_1GEN, &instruction_section, &system_st);
-    add_sym("NEGB", I_NEGB, OC_1GEN, &instruction_section, &system_st);
-    add_sym("NOP", I_NOP, OC_NONE, &instruction_section, &system_st);
-    add_sym("RESET", I_RESET, OC_NONE, &instruction_section, &system_st);
-    add_sym("RETURN", I_RETURN, OC_NONE, &instruction_section, &system_st);
-    add_sym("ROL", I_ROL, OC_1GEN, &instruction_section, &system_st);
-    add_sym("ROLB", I_ROLB, OC_1GEN, &instruction_section, &system_st);
-    add_sym("ROR", I_ROR, OC_1GEN, &instruction_section, &system_st);
-    add_sym("RORB", I_RORB, OC_1GEN, &instruction_section, &system_st);
-    add_sym("RTI", I_RTI, OC_NONE, &instruction_section, &system_st);
-    add_sym("RTS", I_RTS, OC_1REG, &instruction_section, &system_st);
-    add_sym("RTT", I_RTT, OC_NONE, &instruction_section, &system_st);
-    add_sym("SBC", I_SBC, OC_1GEN, &instruction_section, &system_st);
-    add_sym("SBCB", I_SBCB, OC_1GEN, &instruction_section, &system_st);
-    add_sym("SCC", I_SCC, OC_NONE, &instruction_section, &system_st);
-    add_sym("SEC", I_SEC, OC_NONE, &instruction_section, &system_st);
-    add_sym("SEN", I_SEN, OC_NONE, &instruction_section, &system_st);
-    add_sym("SEV", I_SEV, OC_NONE, &instruction_section, &system_st);
-    add_sym("SEZ", I_SEZ, OC_NONE, &instruction_section, &system_st);
-    add_sym("SOB", I_SOB, OC_SOB, &instruction_section, &system_st);
-    add_sym("SPL", I_SPL, OC_1REG, &instruction_section, &system_st);
-    add_sym("SUB", I_SUB, OC_2GEN, &instruction_section, &system_st);
-    add_sym("SWAB", I_SWAB, OC_1GEN, &instruction_section, &system_st);
-    add_sym("SXT", I_SXT, OC_1GEN, &instruction_section, &system_st);
-    add_sym("TRAP", I_TRAP, OC_MARK, &instruction_section, &system_st);
-    add_sym("TST", I_TST, OC_1GEN, &instruction_section, &system_st);
-    add_sym("TSTB", I_TSTB, OC_1GEN, &instruction_section, &system_st);
-    add_sym("WAIT", I_WAIT, OC_NONE, &instruction_section, &system_st);
-    add_sym("XFC", I_XFC, OC_NONE, &instruction_section, &system_st);
-    add_sym("XOR", I_XOR, OC_JSR, &instruction_section, &system_st);
-    add_sym("MFPT", I_MFPT, OC_NONE, &instruction_section, &system_st);
-    add_sym("CSM", I_CSM, OC_1GEN, &instruction_section, &system_st);
-    add_sym("TSTSET", I_TSTSET, OC_1GEN, &instruction_section, &system_st);
-    add_sym("WRTLCK", I_WRTLCK, OC_1GEN, &instruction_section, &system_st);
+    ADD_SYM("ADC", I_ADC, OC_1GEN, &instruction_section, &system_st);
+    ADD_SYM("ADCB", I_ADCB, OC_1GEN, &instruction_section, &system_st);
+    ADD_SYM("ADD", I_ADD, OC_2GEN, &instruction_section, &system_st);
+    ADD_SYM("ASH", I_ASH, OC_ASH, &instruction_section, &system_st);
+    ADD_SYM("ASHC", I_ASHC, OC_ASH, &instruction_section, &system_st);
+    ADD_SYM("ASL", I_ASL, OC_1GEN, &instruction_section, &system_st);
+    ADD_SYM("ASLB", I_ASLB, OC_1GEN, &instruction_section, &system_st);
+    ADD_SYM("ASR", I_ASR, OC_1GEN, &instruction_section, &system_st);
+    ADD_SYM("ASRB", I_ASRB, OC_1GEN, &instruction_section, &system_st);
+    ADD_SYM("BCC", I_BCC, OC_BR, &instruction_section, &system_st);
+    ADD_SYM("BCS", I_BCS, OC_BR, &instruction_section, &system_st);
+    ADD_SYM("BEQ", I_BEQ, OC_BR, &instruction_section, &system_st);
+    ADD_SYM("BGE", I_BGE, OC_BR, &instruction_section, &system_st);
+    ADD_SYM("BGT", I_BGT, OC_BR, &instruction_section, &system_st);
+    ADD_SYM("BHI", I_BHI, OC_BR, &instruction_section, &system_st);
+    ADD_SYM("BHIS", I_BHIS, OC_BR, &instruction_section, &system_st);
+    ADD_SYM("BIC", I_BIC, OC_2GEN, &instruction_section, &system_st);
+    ADD_SYM("BICB", I_BICB, OC_2GEN, &instruction_section, &system_st);
+    ADD_SYM("BIS", I_BIS, OC_2GEN, &instruction_section, &system_st);
+    ADD_SYM("BISB", I_BISB, OC_2GEN, &instruction_section, &system_st);
+    ADD_SYM("BIT", I_BIT, OC_2GEN, &instruction_section, &system_st);
+    ADD_SYM("BITB", I_BITB, OC_2GEN, &instruction_section, &system_st);
+    ADD_SYM("BLE", I_BLE, OC_BR, &instruction_section, &system_st);
+    ADD_SYM("BLO", I_BLO, OC_BR, &instruction_section, &system_st);
+    ADD_SYM("BLOS", I_BLOS, OC_BR, &instruction_section, &system_st);
+    ADD_SYM("BLT", I_BLT, OC_BR, &instruction_section, &system_st);
+    ADD_SYM("BMI", I_BMI, OC_BR, &instruction_section, &system_st);
+    ADD_SYM("BNE", I_BNE, OC_BR, &instruction_section, &system_st);
+    ADD_SYM("BPL", I_BPL, OC_BR, &instruction_section, &system_st);
+    ADD_SYM("BPT", I_BPT, OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("BR", I_BR, OC_BR, &instruction_section, &system_st);
+    ADD_SYM("BVC", I_BVC, OC_BR, &instruction_section, &system_st);
+    ADD_SYM("BVS", I_BVS, OC_BR, &instruction_section, &system_st);
+    ADD_SYM("CALL", I_CALL, OC_1GEN, &instruction_section, &system_st);
+    ADD_SYM("CALLR", I_CALLR, OC_1GEN, &instruction_section, &system_st);
+    ADD_SYM("CCC", I_CCC, OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("CLC", I_CLC, OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("CLN", I_CLN, OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("CLR", I_CLR, OC_1GEN, &instruction_section, &system_st);
+    ADD_SYM("CLRB", I_CLRB, OC_1GEN, &instruction_section, &system_st);
+    ADD_SYM("CLV", I_CLV, OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("CLZ", I_CLZ, OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("CMP", I_CMP, OC_2GEN, &instruction_section, &system_st);
+    ADD_SYM("CMPB", I_CMPB, OC_2GEN, &instruction_section, &system_st);
+    ADD_SYM("COM", I_COM, OC_1GEN, &instruction_section, &system_st);
+    ADD_SYM("COMB", I_COMB, OC_1GEN, &instruction_section, &system_st);
+    ADD_SYM("DEC", I_DEC, OC_1GEN, &instruction_section, &system_st);
+    ADD_SYM("DECB", I_DECB, OC_1GEN, &instruction_section, &system_st);
+    ADD_SYM("DIV", I_DIV, OC_ASH, &instruction_section, &system_st);
+    ADD_SYM("EMT", I_EMT, OC_MARK, &instruction_section, &system_st);
+    ADD_SYM("FADD", I_FADD, OC_1REG, &instruction_section, &system_st);
+    ADD_SYM("FDIV", I_FDIV, OC_1REG, &instruction_section, &system_st);
+    ADD_SYM("FMUL", I_FMUL, OC_1REG, &instruction_section, &system_st);
+    ADD_SYM("FSUB", I_FSUB, OC_1REG, &instruction_section, &system_st);
+    ADD_SYM("HALT", I_HALT, OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("INC", I_INC, OC_1GEN, &instruction_section, &system_st);
+    ADD_SYM("INCB", I_INCB, OC_1GEN, &instruction_section, &system_st);
+    ADD_SYM("IOT", I_IOT, OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("JMP", I_JMP, OC_1GEN, &instruction_section, &system_st);
+    ADD_SYM("JSR", I_JSR, OC_JSR, &instruction_section, &system_st);
+    ADD_SYM("MARK", I_MARK, OC_MARK, &instruction_section, &system_st);
+    ADD_SYM("MED6X", I_MED6X, OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("MED74C", I_MED74C, OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("MFPD", I_MFPD, OC_1GEN, &instruction_section, &system_st);
+    ADD_SYM("MFPI", I_MFPI, OC_1GEN, &instruction_section, &system_st);
+    ADD_SYM("MFPS", I_MFPS, OC_1GEN, &instruction_section, &system_st);
+    ADD_SYM("MOV", I_MOV, OC_2GEN, &instruction_section, &system_st);
+    ADD_SYM("MOVB", I_MOVB, OC_2GEN, &instruction_section, &system_st);
+    ADD_SYM("MTPD", I_MTPD, OC_1GEN, &instruction_section, &system_st);
+    ADD_SYM("MTPI", I_MTPI, OC_1GEN, &instruction_section, &system_st);
+    ADD_SYM("MTPS", I_MTPS, OC_1GEN, &instruction_section, &system_st);
+    ADD_SYM("MUL", I_MUL, OC_ASH, &instruction_section, &system_st);
+    ADD_SYM("NEG", I_NEG, OC_1GEN, &instruction_section, &system_st);
+    ADD_SYM("NEGB", I_NEGB, OC_1GEN, &instruction_section, &system_st);
+    ADD_SYM("NOP", I_NOP, OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("RESET", I_RESET, OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("RETURN", I_RETURN, OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("ROL", I_ROL, OC_1GEN, &instruction_section, &system_st);
+    ADD_SYM("ROLB", I_ROLB, OC_1GEN, &instruction_section, &system_st);
+    ADD_SYM("ROR", I_ROR, OC_1GEN, &instruction_section, &system_st);
+    ADD_SYM("RORB", I_RORB, OC_1GEN, &instruction_section, &system_st);
+    ADD_SYM("RTI", I_RTI, OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("RTS", I_RTS, OC_1REG, &instruction_section, &system_st);
+    ADD_SYM("RTT", I_RTT, OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("SBC", I_SBC, OC_1GEN, &instruction_section, &system_st);
+    ADD_SYM("SBCB", I_SBCB, OC_1GEN, &instruction_section, &system_st);
+    ADD_SYM("SCC", I_SCC, OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("SEC", I_SEC, OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("SEN", I_SEN, OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("SEV", I_SEV, OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("SEZ", I_SEZ, OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("SOB", I_SOB, OC_SOB, &instruction_section, &system_st);
+    ADD_SYM("SPL", I_SPL, OC_1REG, &instruction_section, &system_st);
+    ADD_SYM("SUB", I_SUB, OC_2GEN, &instruction_section, &system_st);
+    ADD_SYM("SWAB", I_SWAB, OC_1GEN, &instruction_section, &system_st);
+    ADD_SYM("SXT", I_SXT, OC_1GEN, &instruction_section, &system_st);
+    ADD_SYM("TRAP", I_TRAP, OC_MARK, &instruction_section, &system_st);
+    ADD_SYM("TST", I_TST, OC_1GEN, &instruction_section, &system_st);
+    ADD_SYM("TSTB", I_TSTB, OC_1GEN, &instruction_section, &system_st);
+    ADD_SYM("WAIT", I_WAIT, OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("XFC", I_XFC, OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("XOR", I_XOR, OC_JSR, &instruction_section, &system_st);
+    ADD_SYM("MFPT", I_MFPT, OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("CSM", I_CSM, OC_1GEN, &instruction_section, &system_st);
+    ADD_SYM("TSTSET", I_TSTSET, OC_1GEN, &instruction_section, &system_st);
+    ADD_SYM("WRTLCK", I_WRTLCK, OC_1GEN, &instruction_section, &system_st);
 
     /* FPP instructions */
-    add_sym("ABSD", I_ABSD, OC_FPP_FDST, &instruction_section, &system_st);
-    add_sym("ABSF", I_ABSF, OC_FPP_FDST, &instruction_section, &system_st);
-    add_sym("ADDD", I_ADDD, OC_FPP_FSRCAC, &instruction_section, &system_st);
-    add_sym("ADDF", I_ADDF, OC_FPP_FSRCAC, &instruction_section, &system_st);
-    add_sym("CFCC", I_CFCC, OC_NONE, &instruction_section, &system_st);
-    add_sym("CLRD", I_CLRD, OC_FPP_FDST, &instruction_section, &system_st);
-    add_sym("CLRF", I_CLRF, OC_FPP_FDST, &instruction_section, &system_st);
-    add_sym("CMPD", I_CMPD, OC_FPP_FSRCAC, &instruction_section, &system_st);
-    add_sym("CMPF", I_CMPF, OC_FPP_FSRCAC, &instruction_section, &system_st);
-    add_sym("DIVD", I_DIVD, OC_FPP_FSRCAC, &instruction_section, &system_st);
-    add_sym("DIVF", I_DIVF, OC_FPP_FSRCAC, &instruction_section, &system_st);
-    add_sym("LDCDF", I_LDCDF, OC_FPP_FSRCAC, &instruction_section, &system_st);
-    add_sym("LDCFD", I_LDCFD, OC_FPP_FSRCAC, &instruction_section, &system_st);
-    add_sym("LDCID", I_LDCID, OC_FPP_SRCAC, &instruction_section, &system_st);
-    add_sym("LDCIF", I_LDCIF, OC_FPP_SRCAC, &instruction_section, &system_st);
-    add_sym("LDCLD", I_LDCLD, OC_FPP_SRCAC, &instruction_section, &system_st);
-    add_sym("LDCLF", I_LDCLF, OC_FPP_SRCAC, &instruction_section, &system_st);
-    add_sym("LDD", I_LDD, OC_FPP_FSRCAC, &instruction_section, &system_st);
-    add_sym("LDEXP", I_LDEXP, OC_FPP_SRCAC, &instruction_section, &system_st);
-    add_sym("LDF", I_LDF, OC_FPP_FSRCAC, &instruction_section, &system_st);
-    add_sym("LDFPS", I_LDFPS, OC_1GEN, &instruction_section, &system_st);
-    add_sym("MODD", I_MODD, OC_FPP_FSRCAC, &instruction_section, &system_st);
-    add_sym("MODF", I_MODF, OC_FPP_FSRCAC, &instruction_section, &system_st);
-    add_sym("MULD", I_MULD, OC_FPP_FSRCAC, &instruction_section, &system_st);
-    add_sym("MULF", I_MULF, OC_FPP_FSRCAC, &instruction_section, &system_st);
-    add_sym("NEGD", I_NEGD, OC_FPP_FDST, &instruction_section, &system_st);
-    add_sym("NEGF", I_NEGF, OC_FPP_FDST, &instruction_section, &system_st);
-    add_sym("SETD", I_SETD, OC_NONE, &instruction_section, &system_st);
-    add_sym("SETF", I_SETF, OC_NONE, &instruction_section, &system_st);
-    add_sym("SETI", I_SETI, OC_NONE, &instruction_section, &system_st);
-    add_sym("SETL", I_SETL, OC_NONE, &instruction_section, &system_st);
-    add_sym("STA0", I_STA0, OC_NONE, &instruction_section, &system_st);
-    add_sym("STB0", I_STB0, OC_NONE, &instruction_section, &system_st);
-    add_sym("STCDF", I_STCDF, OC_FPP_ACFDST, &instruction_section, &system_st);
-    add_sym("STCDI", I_STCDI, OC_FPP_ACFDST, &instruction_section, &system_st);
-    add_sym("STCDL", I_STCDL, OC_FPP_ACFDST, &instruction_section, &system_st);
-    add_sym("STCFD", I_STCFD, OC_FPP_ACFDST, &instruction_section, &system_st);
-    add_sym("STCFI", I_STCFI, OC_FPP_ACFDST, &instruction_section, &system_st);
-    add_sym("STCFL", I_STCFL, OC_FPP_ACFDST, &instruction_section, &system_st);
-    add_sym("STD", I_STD, OC_FPP_ACFDST, &instruction_section, &system_st);
-    add_sym("STEXP", I_STEXP, OC_FPP_ACDST, &instruction_section, &system_st);
-    add_sym("STF", I_STF, OC_FPP_ACFDST, &instruction_section, &system_st);
-    add_sym("STFPS", I_STFPS, OC_1GEN, &instruction_section, &system_st);
-    add_sym("STST", I_STST, OC_1GEN, &instruction_section, &system_st);
-    add_sym("SUBD", I_SUBD, OC_FPP_FSRCAC, &instruction_section, &system_st);
-    add_sym("SUBF", I_SUBF, OC_FPP_FSRCAC, &instruction_section, &system_st);
-    add_sym("TSTD", I_TSTD, OC_FPP_FDST, &instruction_section, &system_st);
-    add_sym("TSTF", I_TSTF, OC_FPP_FDST, &instruction_section, &system_st);
+    ADD_SYM("ABSD", I_ABSD, OC_FPP_FDST, &instruction_section, &system_st);
+    ADD_SYM("ABSF", I_ABSF, OC_FPP_FDST, &instruction_section, &system_st);
+    ADD_SYM("ADDD", I_ADDD, OC_FPP_FSRCAC, &instruction_section, &system_st);
+    ADD_SYM("ADDF", I_ADDF, OC_FPP_FSRCAC, &instruction_section, &system_st);
+    ADD_SYM("CFCC", I_CFCC, OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("CLRD", I_CLRD, OC_FPP_FDST, &instruction_section, &system_st);
+    ADD_SYM("CLRF", I_CLRF, OC_FPP_FDST, &instruction_section, &system_st);
+    ADD_SYM("CMPD", I_CMPD, OC_FPP_FSRCAC, &instruction_section, &system_st);
+    ADD_SYM("CMPF", I_CMPF, OC_FPP_FSRCAC, &instruction_section, &system_st);
+    ADD_SYM("DIVD", I_DIVD, OC_FPP_FSRCAC, &instruction_section, &system_st);
+    ADD_SYM("DIVF", I_DIVF, OC_FPP_FSRCAC, &instruction_section, &system_st);
+    ADD_SYM("LDCDF", I_LDCDF, OC_FPP_FSRCAC, &instruction_section, &system_st);
+    ADD_SYM("LDCFD", I_LDCFD, OC_FPP_FSRCAC, &instruction_section, &system_st);
+    ADD_SYM("LDCID", I_LDCID, OC_FPP_SRCAC, &instruction_section, &system_st);
+    ADD_SYM("LDCIF", I_LDCIF, OC_FPP_SRCAC, &instruction_section, &system_st);
+    ADD_SYM("LDCLD", I_LDCLD, OC_FPP_SRCAC, &instruction_section, &system_st);
+    ADD_SYM("LDCLF", I_LDCLF, OC_FPP_SRCAC, &instruction_section, &system_st);
+    ADD_SYM("LDD", I_LDD, OC_FPP_FSRCAC, &instruction_section, &system_st);
+    ADD_SYM("LDEXP", I_LDEXP, OC_FPP_SRCAC, &instruction_section, &system_st);
+    ADD_SYM("LDF", I_LDF, OC_FPP_FSRCAC, &instruction_section, &system_st);
+    ADD_SYM("LDFPS", I_LDFPS, OC_1GEN, &instruction_section, &system_st);
+    ADD_SYM("MODD", I_MODD, OC_FPP_FSRCAC, &instruction_section, &system_st);
+    ADD_SYM("MODF", I_MODF, OC_FPP_FSRCAC, &instruction_section, &system_st);
+    ADD_SYM("MULD", I_MULD, OC_FPP_FSRCAC, &instruction_section, &system_st);
+    ADD_SYM("MULF", I_MULF, OC_FPP_FSRCAC, &instruction_section, &system_st);
+    ADD_SYM("NEGD", I_NEGD, OC_FPP_FDST, &instruction_section, &system_st);
+    ADD_SYM("NEGF", I_NEGF, OC_FPP_FDST, &instruction_section, &system_st);
+    ADD_SYM("SETD", I_SETD, OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("SETF", I_SETF, OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("SETI", I_SETI, OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("SETL", I_SETL, OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("STA0", I_STA0, OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("STB0", I_STB0, OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("STCDF", I_STCDF, OC_FPP_ACFDST, &instruction_section, &system_st);
+    ADD_SYM("STCDI", I_STCDI, OC_FPP_ACFDST, &instruction_section, &system_st);
+    ADD_SYM("STCDL", I_STCDL, OC_FPP_ACFDST, &instruction_section, &system_st);
+    ADD_SYM("STCFD", I_STCFD, OC_FPP_ACFDST, &instruction_section, &system_st);
+    ADD_SYM("STCFI", I_STCFI, OC_FPP_ACFDST, &instruction_section, &system_st);
+    ADD_SYM("STCFL", I_STCFL, OC_FPP_ACFDST, &instruction_section, &system_st);
+    ADD_SYM("STD", I_STD, OC_FPP_ACFDST, &instruction_section, &system_st);
+    ADD_SYM("STEXP", I_STEXP, OC_FPP_ACDST, &instruction_section, &system_st);
+    ADD_SYM("STF", I_STF, OC_FPP_ACFDST, &instruction_section, &system_st);
+    ADD_SYM("STFPS", I_STFPS, OC_1GEN, &instruction_section, &system_st);
+    ADD_SYM("STST", I_STST, OC_1GEN, &instruction_section, &system_st);
+    ADD_SYM("SUBD", I_SUBD, OC_FPP_FSRCAC, &instruction_section, &system_st);
+    ADD_SYM("SUBF", I_SUBF, OC_FPP_FSRCAC, &instruction_section, &system_st);
+    ADD_SYM("TSTD", I_TSTD, OC_FPP_FDST, &instruction_section, &system_st);
+    ADD_SYM("TSTF", I_TSTF, OC_FPP_FDST, &instruction_section, &system_st);
 
     /* The CIS instructions */
-    add_sym("ADDNI", I_ADDN|I_CIS_I, OC_CIS3, &instruction_section, &system_st);
-    add_sym("ADDN",  I_ADDN,         OC_NONE, &instruction_section, &system_st);
-    add_sym("ADDPI", I_ADDP|I_CIS_I, OC_CIS3, &instruction_section, &system_st);
-    add_sym("ADDP",  I_ADDP,         OC_NONE, &instruction_section, &system_st);
-    add_sym("ASHNI", I_ASHN|I_CIS_I, OC_CIS3, &instruction_section, &system_st);
-    add_sym("ASHN",  I_ASHN,         OC_NONE, &instruction_section, &system_st);
-    add_sym("ASHPI", I_ASHP|I_CIS_I, OC_CIS3, &instruction_section, &system_st);
-    add_sym("ASHP",  I_ASHP,         OC_NONE, &instruction_section, &system_st);
-    add_sym("CMPCI", I_CMPC|I_CIS_I, OC_CIS3, &instruction_section, &system_st);
-    add_sym("CMPC",  I_CMPC,         OC_NONE, &instruction_section, &system_st);
-    add_sym("CMPNI", I_CMPN|I_CIS_I, OC_CIS2, &instruction_section, &system_st);
-    add_sym("CMPN",  I_CMPN,         OC_NONE, &instruction_section, &system_st);
-    add_sym("CMPPI", I_CMPP|I_CIS_I, OC_CIS2, &instruction_section, &system_st);
-    add_sym("CMPP",  I_CMPP,         OC_NONE, &instruction_section, &system_st);
-    add_sym("CVTLNI",I_CVTLN|I_CIS_I,OC_CIS2, &instruction_section, &system_st);
-    add_sym("CVTLN", I_CVTLN,        OC_NONE, &instruction_section, &system_st);
-    add_sym("CVTLPI",I_CVTLP|I_CIS_I,OC_CIS2, &instruction_section, &system_st);
-    add_sym("CVTLP", I_CVTPL,        OC_NONE, &instruction_section, &system_st);
-    add_sym("CVTNLI",I_CVTNL|I_CIS_I,OC_CIS2, &instruction_section, &system_st);
-    add_sym("CVTNL", I_CVTNL,        OC_NONE, &instruction_section, &system_st);
-    add_sym("CVTPLI",I_CVTPL|I_CIS_I,OC_CIS2, &instruction_section, &system_st);
-    add_sym("CVTPL", I_CVTPL,        OC_NONE, &instruction_section, &system_st);
-    add_sym("CVTNPI",I_CVTNP|I_CIS_I,OC_CIS2, &instruction_section, &system_st);
-    add_sym("CVTNP", I_CVTNP,        OC_NONE, &instruction_section, &system_st);
-    add_sym("CVTPNI",I_CVTPN|I_CIS_I,OC_CIS2, &instruction_section, &system_st);
-    add_sym("CVTPN", I_CVTPN,        OC_NONE, &instruction_section, &system_st);
-    add_sym("DIVPI", I_DIVP|I_CIS_I, OC_CIS3, &instruction_section, &system_st);
-    add_sym("DIVP",  I_DIVP,         OC_NONE, &instruction_section, &system_st);
-    add_sym("LOCCI", I_LOCC|I_CIS_I, OC_CIS2, &instruction_section, &system_st);
-    add_sym("LOCC",  I_LOCC,         OC_NONE, &instruction_section, &system_st);
-    add_sym("L2D0",  I_L2Dr+0,       OC_NONE, &instruction_section, &system_st);
-    add_sym("L2D1",  I_L2Dr+1,       OC_NONE, &instruction_section, &system_st);
-    add_sym("L2D2",  I_L2Dr+2,       OC_NONE, &instruction_section, &system_st);
-    add_sym("L2D3",  I_L2Dr+3,       OC_NONE, &instruction_section, &system_st);
-    add_sym("L2D4",  I_L2Dr+4,       OC_NONE, &instruction_section, &system_st);
-    add_sym("L2D5",  I_L2Dr+5,       OC_NONE, &instruction_section, &system_st);
-    add_sym("L2D6",  I_L2Dr+6,       OC_NONE, &instruction_section, &system_st);
-    add_sym("L2D7",  I_L2Dr+7,       OC_NONE, &instruction_section, &system_st);
-    add_sym("L3D0",  I_L3Dr+0,       OC_NONE, &instruction_section, &system_st);
-    add_sym("L3D1",  I_L3Dr+1,       OC_NONE, &instruction_section, &system_st);
-    add_sym("L3D2",  I_L3Dr+2,       OC_NONE, &instruction_section, &system_st);
-    add_sym("L3D3",  I_L3Dr+3,       OC_NONE, &instruction_section, &system_st);
-    add_sym("L3D4",  I_L3Dr+4,       OC_NONE, &instruction_section, &system_st);
-    add_sym("L3D5",  I_L3Dr+5,       OC_NONE, &instruction_section, &system_st);
-    add_sym("L3D6",  I_L3Dr+6,       OC_NONE, &instruction_section, &system_st);
-    add_sym("L3D7",  I_L3Dr+7,       OC_NONE, &instruction_section, &system_st);
-    add_sym("MATCI", I_MATC|I_CIS_I, OC_CIS2, &instruction_section, &system_st);
-    add_sym("MATC",  I_MATC,         OC_NONE, &instruction_section, &system_st);
-    add_sym("MOVCI", I_MOVC|I_CIS_I, OC_CIS3, &instruction_section, &system_st);
-    add_sym("MOVC",  I_MOVC,         OC_NONE, &instruction_section, &system_st);
-    add_sym("MOVRCI",I_MOVRC|I_CIS_I,OC_CIS3, &instruction_section, &system_st);
-    add_sym("MOVRC", I_MOVRC,        OC_NONE, &instruction_section, &system_st);
-    add_sym("MOVTCI",I_MOVTC|I_CIS_I,OC_CIS4, &instruction_section, &system_st);
-    add_sym("MOVTC", I_MOVTC,        OC_NONE, &instruction_section, &system_st);
-    add_sym("MULPI", I_MULP|I_CIS_I, OC_CIS3, &instruction_section, &system_st);
-    add_sym("MULP",  I_MULP,         OC_NONE, &instruction_section, &system_st);
-    add_sym("SCANCI",I_SCANC|I_CIS_I,OC_CIS2, &instruction_section, &system_st);
-    add_sym("SCANC", I_SCANC,        OC_NONE, &instruction_section, &system_st);
-    add_sym("SKPCI", I_SKPC|I_CIS_I, OC_CIS2, &instruction_section, &system_st);
-    add_sym("SKPC",  I_SKPC,         OC_NONE, &instruction_section, &system_st);
-    add_sym("SPANCI",I_SPANC|I_CIS_I,OC_CIS2, &instruction_section, &system_st);
-    add_sym("SPANC", I_SPANC,        OC_NONE, &instruction_section, &system_st);
-    add_sym("SUBNI", I_SUBN|I_CIS_I, OC_CIS3, &instruction_section, &system_st);
-    add_sym("SUBN",  I_SUBN,         OC_NONE, &instruction_section, &system_st);
-    add_sym("SUBPI", I_SUBP|I_CIS_I, OC_CIS3, &instruction_section, &system_st);
-    add_sym("SUBP",  I_SUBP,         OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("ADDNI", I_ADDN|I_CIS_I, OC_CIS3, &instruction_section, &system_st);
+    ADD_SYM("ADDN",  I_ADDN,         OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("ADDPI", I_ADDP|I_CIS_I, OC_CIS3, &instruction_section, &system_st);
+    ADD_SYM("ADDP",  I_ADDP,         OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("ASHNI", I_ASHN|I_CIS_I, OC_CIS3, &instruction_section, &system_st);
+    ADD_SYM("ASHN",  I_ASHN,         OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("ASHPI", I_ASHP|I_CIS_I, OC_CIS3, &instruction_section, &system_st);
+    ADD_SYM("ASHP",  I_ASHP,         OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("CMPCI", I_CMPC|I_CIS_I, OC_CIS3, &instruction_section, &system_st);
+    ADD_SYM("CMPC",  I_CMPC,         OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("CMPNI", I_CMPN|I_CIS_I, OC_CIS2, &instruction_section, &system_st);
+    ADD_SYM("CMPN",  I_CMPN,         OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("CMPPI", I_CMPP|I_CIS_I, OC_CIS2, &instruction_section, &system_st);
+    ADD_SYM("CMPP",  I_CMPP,         OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("CVTLNI",I_CVTLN|I_CIS_I,OC_CIS2, &instruction_section, &system_st);
+    ADD_SYM("CVTLN", I_CVTLN,        OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("CVTLPI",I_CVTLP|I_CIS_I,OC_CIS2, &instruction_section, &system_st);
+    ADD_SYM("CVTLP", I_CVTPL,        OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("CVTNLI",I_CVTNL|I_CIS_I,OC_CIS2, &instruction_section, &system_st);
+    ADD_SYM("CVTNL", I_CVTNL,        OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("CVTPLI",I_CVTPL|I_CIS_I,OC_CIS2, &instruction_section, &system_st);
+    ADD_SYM("CVTPL", I_CVTPL,        OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("CVTNPI",I_CVTNP|I_CIS_I,OC_CIS2, &instruction_section, &system_st);
+    ADD_SYM("CVTNP", I_CVTNP,        OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("CVTPNI",I_CVTPN|I_CIS_I,OC_CIS2, &instruction_section, &system_st);
+    ADD_SYM("CVTPN", I_CVTPN,        OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("DIVPI", I_DIVP|I_CIS_I, OC_CIS3, &instruction_section, &system_st);
+    ADD_SYM("DIVP",  I_DIVP,         OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("LOCCI", I_LOCC|I_CIS_I, OC_CIS2, &instruction_section, &system_st);
+    ADD_SYM("LOCC",  I_LOCC,         OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("L2D0",  I_L2Dr+0,       OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("L2D1",  I_L2Dr+1,       OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("L2D2",  I_L2Dr+2,       OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("L2D3",  I_L2Dr+3,       OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("L2D4",  I_L2Dr+4,       OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("L2D5",  I_L2Dr+5,       OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("L2D6",  I_L2Dr+6,       OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("L2D7",  I_L2Dr+7,       OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("L3D0",  I_L3Dr+0,       OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("L3D1",  I_L3Dr+1,       OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("L3D2",  I_L3Dr+2,       OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("L3D3",  I_L3Dr+3,       OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("L3D4",  I_L3Dr+4,       OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("L3D5",  I_L3Dr+5,       OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("L3D6",  I_L3Dr+6,       OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("L3D7",  I_L3Dr+7,       OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("MATCI", I_MATC|I_CIS_I, OC_CIS2, &instruction_section, &system_st);
+    ADD_SYM("MATC",  I_MATC,         OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("MOVCI", I_MOVC|I_CIS_I, OC_CIS3, &instruction_section, &system_st);
+    ADD_SYM("MOVC",  I_MOVC,         OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("MOVRCI",I_MOVRC|I_CIS_I,OC_CIS3, &instruction_section, &system_st);
+    ADD_SYM("MOVRC", I_MOVRC,        OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("MOVTCI",I_MOVTC|I_CIS_I,OC_CIS4, &instruction_section, &system_st);
+    ADD_SYM("MOVTC", I_MOVTC,        OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("MULPI", I_MULP|I_CIS_I, OC_CIS3, &instruction_section, &system_st);
+    ADD_SYM("MULP",  I_MULP,         OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("SCANCI",I_SCANC|I_CIS_I,OC_CIS2, &instruction_section, &system_st);
+    ADD_SYM("SCANC", I_SCANC,        OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("SKPCI", I_SKPC|I_CIS_I, OC_CIS2, &instruction_section, &system_st);
+    ADD_SYM("SKPC",  I_SKPC,         OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("SPANCI",I_SPANC|I_CIS_I,OC_CIS2, &instruction_section, &system_st);
+    ADD_SYM("SPANC", I_SPANC,        OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("SUBNI", I_SUBN|I_CIS_I, OC_CIS3, &instruction_section, &system_st);
+    ADD_SYM("SUBN",  I_SUBN,         OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("SUBPI", I_SUBP|I_CIS_I, OC_CIS3, &instruction_section, &system_st);
+    ADD_SYM("SUBP",  I_SUBP,         OC_NONE, &instruction_section, &system_st);
 
-    add_sym(current_section->label, 0, 0, current_section, &section_st);
+    ADD_SYM(current_section->label, 0, 0, current_section, &section_st);
 }
 
 /* sym_hist is a diagnostic function that prints a histogram of the
@@ -740,7 +756,7 @@ void list_symbol_table(
         int i;
         for (i = line; i < nsyms; i += nlines) {
             sym = symbols[i];
-            check_sym_invariants(sym, __FILE__, __LINE__);
+            check_sym_invariants(sym, __FILE__, __LINE__, NULL);
 
             fprintf(lstfile,"%-*s", longest_symbol, sym->label);
             fprintf(lstfile,"%c", (sym->section->flags & PSECT_REL) ? ' ' : '=');
