@@ -54,10 +54,10 @@ static unsigned * assemble_rad50 (
             value = parse_unary_expr(cp, 0);
             cp = value->cp;
             if (value->type != EX_LIT) {
-                report(stack->top, "expression must be constant\n");
+                report(stack->top, "Expression must be constant\n");
                 radstr[len++] = 0;
             } else if (value->data.lit >= 050) {
-                report(stack->top, "invalid character value %o\n", value->data.lit);
+                report(stack->top, "Invalid character value %o\n", value->data.lit);
                 radstr[len++] = 0;
             } else {
                 radstr[len++] = value->data.lit;
@@ -70,7 +70,7 @@ static unsigned * assemble_rad50 (
                 int         ch = ascii2rad50(*cp++);
 
                 if (ch == -1) {
-                    report(stack->top, "invalid character '%c'\n", cp[-1]);
+                    report(stack->top, "Invalid character '%c'\n", cp[-1]);
                     radstr[len++] = 0;
                 } else {
                     radstr[len++] = ch;
@@ -220,7 +220,7 @@ O    75                                         .endc
             cp = ncp;
 
             if (sym == NULL)
-                report(stack->top, "Illegal symbol definition %s\n", label);
+                report(stack->top, "Invalid symbol definition '%s'\n", label);
 
             free(label);
 
@@ -284,7 +284,7 @@ O    75                                         .endc
                        section must = current. */
 
                     if (!express_sym_offset(value, &symb, &offset)) {
-                        report(stack->top, "Illegal ORG (for relocatable section)\n");
+                        report(stack->top, "Invalid ORG (for relocatable section)\n");
                     } else if (SYM_IS_IMPORTED(symb)) {
                         report(stack->top, "Can't ORG to external location\n");
                     } else if (symb->flags & SYMBOLFLAG_UNDEFINED) {
@@ -508,7 +508,7 @@ do_mcalled_macro:
                         label = get_symbol(cp, &cp, &islocal);
 
                         if (label == NULL) {
-                            report(stack->top, "Bad .NARG syntax\n");
+                            report(stack->top, "Bad .NARG syntax (symbol expected)\n");
                             return 0;
                         }
 
@@ -540,7 +540,7 @@ do_mcalled_macro:
                         label = get_symbol(cp, &cp, &islocal);
 
                         if (label == NULL) {
-                            report(stack->top, "Bad .NCHR syntax\n");
+                            report(stack->top, "Bad .NCHR syntax (symbol expected)\n");
                             return 0;
                         }
 
@@ -563,7 +563,7 @@ do_mcalled_macro:
 
                         label = get_symbol(cp, &cp, &islocal);
                         if (label == NULL) {
-                            report(stack->top, "Bad .NTYPE syntax\n");
+                            report(stack->top, "Bad .NTYPE syntax (symbol expected)\n");
                             return 0;
                         }
 
@@ -702,7 +702,8 @@ do_mcalled_macro:
 
                             label = get_symbol(cp, &cp, NULL);
                             if (!label) {
-                                report(stack->top, "Illegal .MCALL format\n");
+                                report(stack->top,
+                                       "Invalid .MCALL syntax (symbol expected)\n");
                                 return 0;
                             }
 
@@ -717,7 +718,7 @@ do_mcalled_macro:
 
                             /* Do the actual macro library search */
                             if (!do_mcall (label, stack))
-                                report(stack->top, "MACRO %s not found\n", label);
+                                report(stack->top, "MACRO '%s' not found\n", label);
 
                             free(label);
                         }
@@ -1181,7 +1182,7 @@ do_mcalled_macro:
                                comma-separated symbols */
                             label = get_symbol(cp, &ncp, &islocal);
                             if (label == NULL) {
-                                report(stack->top, "Illegal .GLOBL/.WEAK syntax\n");
+                                report(stack->top, "Bad .GLOBL/.WEAK syntax (symbol expected)\n");
                                 return 0;
                             }
 
@@ -1365,7 +1366,7 @@ do_mcalled_macro:
                             label = get_symbol(cp, &cp, &islocal);
 
                             if (label == NULL) {
-                                report(stack->top, "Bad .PACKED syntax: symbol name expected\n");
+                                report(stack->top, "Bad .PACKED syntax (symbol expected)\n");
                                 return 0;
                             }
 
@@ -1413,7 +1414,8 @@ do_mcalled_macro:
                                 cp = value->cp;
                                 if (value->type != EX_LIT) {
                                     if (op->value == I_MARK) {
-                                        report(stack->top, "Instruction requires " "simple literal operand\n");
+                                        report(stack->top,
+                                               "Instruction requires simple literal operand\n");
                                         store_word(stack->top, tr, 2, op->value);
                                     }
                                     else {
@@ -1449,7 +1451,7 @@ do_mcalled_macro:
                             }
 
                             if (op->value == I_JMP && (mode.type & 070) == 0) {
-                                report(stack->top, "JMP Rn is illegal\n");
+                                report(stack->top, "JMP Rn is impossible\n");
                                 /* But encode it anyway... */
                             }
 
@@ -1694,7 +1696,7 @@ do_mcalled_macro:
                             }
 
                             if (op->value == I_JSR && (mode.type & 070) == 0) {
-                                report(stack->top, "JSR Rn,Rm is illegal\n");
+                                report(stack->top, "JSR Rn,Rm is impossible\n");
                                 /* But encode it anyway... */
                             }
 
@@ -1736,7 +1738,7 @@ do_mcalled_macro:
                             unsigned        word;
 
                             if (!get_fp_src_mode(cp, &cp, &mode)) {
-                                report(stack->top, "Illegal addressing mode\n");
+                                report(stack->top, "Invalid addressing mode\n");
                                 return 0;
                             }
 

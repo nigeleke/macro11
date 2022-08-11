@@ -230,7 +230,7 @@ STREAM         *expand_irp(
 
     label = get_irp_sym(cp, &cp, NULL);
     if (!label) {
-        report(stack->top, "Illegal .IRP syntax\n");
+        report(stack->top, "Invalid .IRP syntax (symbol or <symbol> expected)\n");
         return NULL;
     }
 
@@ -238,7 +238,7 @@ STREAM         *expand_irp(
 
     items = getstring(cp, &cp);
     if (!items) {
-        report(stack->top, "Illegal .IRP syntax\n");
+        report(stack->top, "Invalid .IRP syntax (string expected)\n");
         free(label);
         return NULL;
     }
@@ -360,7 +360,7 @@ STREAM         *expand_irpc(
 
     label = get_irp_sym(cp, &cp, NULL);
     if (!label) {
-        report(stack->top, "Illegal .IRPC syntax\n");
+        report(stack->top, "Invalid .IRPC syntax (label or <label> expected)\n");
         return NULL;
     }
 
@@ -368,7 +368,7 @@ STREAM         *expand_irpc(
 
     items = getstring(cp, &cp);
     if (!items) {
-        report(stack->top, "Illegal .IRPC syntax\n");
+        report(stack->top, "Invalid .IRPC syntax (string expected)\n");
         free(label);
         return NULL;
     }

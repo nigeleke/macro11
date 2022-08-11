@@ -823,7 +823,7 @@ void write_globals(
         unsigned        offset;
 
         if (!express_sym_offset(xfer_address, &lsym, &offset)) {
-            report(NULL, "Illegal program transfer address\n");
+            report(NULL, "Invalid program transfer address\n");
         } else {
             gsd_xfer(&gsd, lsym->section->label, lsym->value + offset);
         }

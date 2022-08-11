@@ -13,7 +13,7 @@
       13 000010 000127  000166'                 jmp     #label          ; (pc)+         does something else!
       14 000014 000137  000166'                 jmp     @#label         ; @(pc)+        jumps to label
       15                                
-test-jmp.mac:16: ***ERROR JMP Rn is illegal
+test-jmp.mac:16: ***ERROR JMP Rn is impossible
       16 000020 000101                          jmp     r1              ; must fail
       17 000022 000110                          jmp     (r0)            ; must succeed (failed before a24e3ba3)
       18 000024 000112                          jmp     (r2)
@@ -30,7 +30,7 @@ test-jmp.mac:16: ***ERROR JMP Rn is illegal
       29 000062 004027  000166'                 jsr     r0,#label       ; (pc)+         does something else!
       30 000066 004037  000166'                 jsr     r0,@#label      ; @(pc)+        jumps to label
       31                                
-test-jmp.mac:32: ***ERROR JSR Rn,Rm is illegal
+test-jmp.mac:32: ***ERROR JSR Rn,Rm is impossible
       32 000072 004201                          jsr     r2,r1           ; must fail
       33 000074 004312                          jsr     r3,(r2)
       34 000076 004421                          jsr     r4,(r1)+

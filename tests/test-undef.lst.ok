@@ -1,4 +1,4 @@
-test-undef.mac:1: ***ERROR MACRO .TTYOU not found
+test-undef.mac:1: ***ERROR MACRO '.TTYOU' not found
        1                                        .MCALL  .TTYOUT
        1                                
 

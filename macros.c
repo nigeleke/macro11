@@ -217,7 +217,7 @@ MACRO          *defmacro(
             /* So, just quit defining arguments. */
             break;
 #if 0
-            report(str, "Illegal macro argument\n");
+            report(str, "Invalid macro argument\n");
             remove_sym(&mac->sym, &macro_st);
             free_macro(mac);
             return NULL;
@@ -229,7 +229,7 @@ MACRO          *defmacro(
             /* Default substitution given */
             arg->value = getstring(cp + 1, &cp);
             if (arg->value == NULL) {
-                report(stack->top, "Illegal macro argument\n");
+                report(stack->top, "Invalid macro argument\n");
                 remove_sym(&mac->sym, &macro_st);
                 free_macro(mac);
                 return NULL;

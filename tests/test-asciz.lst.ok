@@ -39,7 +39,7 @@ test-asciz.mac:19: ***ERROR Complex expression cannot be assigned to a symbol
 test-asciz.mac:21: ***ERROR Invalid expression in .WORD
       21 000076 000001                          .asciz :SOH:                    ; syntax error: colon not allowed
 test-asciz.mac:22: ***ERROR Phase error: '.ASCIZ'
-test-asciz.mac:22: ***ERROR Illegal symbol definition .ASCIZ
+test-asciz.mac:22: ***ERROR Invalid symbol definition '.ASCIZ'
 test-asciz.mac:22: ***ERROR Invalid expression in .WORD
       22                                        .asciz :###:                    ; syntax error: colon not allowed
       23 000100    043     043     043          .asciz ^###^                    ; previous versions of this macro11

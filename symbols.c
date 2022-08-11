@@ -92,31 +92,31 @@ check_sym_invariants(SYMBOL *sym, char *file, int line, STREAM *stream)
         case SYMBOLFLAG_UNDEFINED:
             break;
         default:
-            report(stream, "%s %d: Symbol %s definedness is inconsistent\n", file, line, sym->label);
+            report(stream, "%s %d: Symbol '%s' definedness is inconsistent\n", file, line, sym->label);
             dump++;
     }
 
     if ( (sym->flags & SYMBOLFLAG_IMPLICIT_GLOBAL) &&
         !(sym->flags & SYMBOLFLAG_GLOBAL)) {
-        report(stream, "%s %d: Symbol %s globalness is inconsistent\n", file, line, sym->label);
+        report(stream, "%s %d: Symbol '%s' globalness is inconsistent\n", file, line, sym->label);
         dump++;
     }
 
     if ( (sym->flags & SYMBOLFLAG_LOCAL) &&
          (sym->flags & SYMBOLFLAG_GLOBAL)) {
-        report(stream, "%s %d: Symbol %s is local and global\n", file, line, sym->label);
+        report(stream, "%s %d: Symbol '%s' is local and global\n", file, line, sym->label);
         dump++;
     }
 
     if ( (sym->flags & SYMBOLFLAG_PERMANENT) &&
         !(sym->flags & SYMBOLFLAG_DEFINITION)) {
-        report(stream, "%s %d: Symbol %s is permanent without definition\n", file, line, sym->label);
+        report(stream, "%s %d: Symbol '%s' is permanent without definition\n", file, line, sym->label);
         dump++;
     }
 
     if ( (sym->flags & SYMBOLFLAG_WEAK) &&
         !(sym->flags & SYMBOLFLAG_GLOBAL)) {
-        report(stream, "%s %d: Symbol %s weak/global is inconsistent\n", file, line, sym->label);
+        report(stream, "%s %d: Symbol '%s' weak/global is inconsistent\n", file, line, sym->label);
         dump++;
     }
 
