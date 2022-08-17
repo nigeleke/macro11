@@ -47,8 +47,7 @@ test-include.mac:15: ***ERROR Bad .INCLUDE file name
       15                                        .include <incl.mac<
 test-include.mac:16: ***ERROR Redefining permanent symbol '.INCLU'
       16                                        .include =incl.mac=             ; looks like assignment
-test-include.mac:17: ***ERROR Invalid expression in .WORD
-      17 000012 000000G                         .include :incl.mac:             ; looks like a label
+      17                                        .include :incl.mac:             ; looks like a label
       18                                
       19                                ; this is an error: file does not existst
       20                                
@@ -59,10 +58,10 @@ test-include.mac:21: ***ERROR Unable to find .INCLUDE file "does-not-exist.mac"
 
 Symbol table
 
-.       000014R      001 .INCLU  000012R      001 INCL.M= ****** GX        
+.       000012R      001 .INCLU  000012R      001 INCL.M  000012R      001 
 
 
 Program sections:
 
 . ABS.  000000    000   (RW,I,GBL,ABS,OVR,NOSAV)
-        000014    001   (RW,I,LCL,REL,CON,NOSAV)
+        000012    001   (RW,I,LCL,REL,CON,NOSAV)

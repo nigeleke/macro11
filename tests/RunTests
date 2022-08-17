@@ -21,6 +21,7 @@ TESTS="test-asciz \
     test-impword \
     test-include \
     test-jmp \
+    test-labels \
     test-listing \
     test-locals \
     test-macro-comma \

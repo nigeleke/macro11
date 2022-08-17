@@ -198,12 +198,12 @@ O    75                                         .endc
         return 1;
     }
 
-    /* The line may begin with "label<ws>:[:]" */
+    /* The line may begin with "label<ws>:[:]", possibly repeated. */
 
     /* PSEUDO P_IIF jumps here.  */
   reassemble:
     opcp = cp;
-    if ((label = get_symbol(cp, &ncp, &local)) != NULL) {
+    while ((label = get_symbol(cp, &ncp, &local)) != NULL) {
         int             flag = SYMBOLFLAG_PERMANENT | SYMBOLFLAG_DEFINITION | local;
         SYMBOL         *sym;
 
@@ -233,6 +233,10 @@ O    75                                         .endc
             cp = skipwhite(ncp);
             opcp = cp;
             label = get_symbol(cp, &ncp, NULL); /* Now, get what follows */
+        }
+        else {
+            /* No more labels */
+            break;
         }
     }
 
