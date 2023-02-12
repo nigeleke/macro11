@@ -500,8 +500,8 @@ void add_symbols(
     ADD_SYM("JMP", I_JMP, OC_1GEN, &instruction_section, &system_st);
     ADD_SYM("JSR", I_JSR, OC_JSR, &instruction_section, &system_st);
     ADD_SYM("MARK", I_MARK, OC_MARK, &instruction_section, &system_st);
-    ADD_SYM("MED6X", I_MED6X, OC_NONE, &instruction_section, &system_st);
-    ADD_SYM("MED74C", I_MED74C, OC_NONE, &instruction_section, &system_st);
+    ADD_SYM("MED6X", I_MED6X, OC_NONE, &instruction_section, &system_st); /* PDP-11/60 Maintenance */
+    ADD_SYM("MED74C", I_MED74C, OC_NONE, &instruction_section, &system_st); /* PDP-11/74 CIS Maintenance */
     ADD_SYM("MFPD", I_MFPD, OC_1GEN, &instruction_section, &system_st);
     ADD_SYM("MFPI", I_MFPI, OC_1GEN, &instruction_section, &system_st);
     ADD_SYM("MFPS", I_MFPS, OC_1GEN, &instruction_section, &system_st);

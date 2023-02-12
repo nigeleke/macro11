@@ -360,7 +360,7 @@ STREAM         *expand_irpc(
 
     label = get_irp_sym(cp, &cp, NULL);
     if (!label) {
-        report(stack->top, "Invalid .IRPC syntax (label or <label> expected)\n");
+        report(stack->top, "Invalid .IRPC syntax (symbol or <symbol> expected)\n");
         return NULL;
     }
 
