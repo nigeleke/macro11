@@ -664,7 +664,7 @@ int parse_float(
     DF("float_sign: %d\n", float_sign);
 
     while (!EOL(*cp)) {
-        if (isdigit(*cp)) {
+        if (isdigit((unsigned char)*cp)) {
             /* Can we multiply by 10? */
             DF("digit: %c\n", *cp);
             ok_chars++;
@@ -674,7 +674,7 @@ int parse_float(
                 /*
                  * Explanation of the above comment:
                  * - after the decimal separator, we should ignore extra digits
-                 *   completely. Since float_dot == -1, the exponent will be
+                 *   completely. Since float_dot == 1, the exponent will be
                  *   decremented below, and compensate for that here.
                  * - before the decimal separator, we don't add the digit
                  *   (which would overflow) so we lose some lesser significant
@@ -708,7 +708,7 @@ int parse_float(
         }
     }
 
-    if (toupper(*cp) == 'E') {
+    if (toupper((unsigned char)*cp) == 'E') {
         cp++;
         int exp = strtol(cp, &cp, 10);
 
