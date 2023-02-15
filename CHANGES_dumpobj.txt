@@ -1,6 +1,13 @@
 
 ----------- Mike Hill's entries ------------------
 
+13-Feb-2023: Mike Hill
+        - dumpobj.c
+          RLD 'global reloc' records now count as bad records for LDA output
+          Minor 'LDA output' error message changes etc.
+          #define XFERAD_WHEN_ZERO 2 instead of using a constant (2)
+          #define VERSION to 13-Feb-2023
+
 11-Feb-2023: Mike Hill
         - dumpobj.c
           Only compile the auto-detect code #if DEFAULT_OBJECTFORMAT_RT11 < 0

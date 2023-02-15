@@ -56,10 +56,9 @@ DAMAGE.
 #include "git-info.h"
 #endif
 
-#define VERSION "February 11, 2023"     /* Also check the text above the "Usage:" section below */
+#define VERSION "February 13, 2023"     /* Also check the text above the "Usage:" section below */
 
 #define NPSECTS 256
-#define BADBIN_XFERAD 0                 /* xferad to use if badbin > 0: choose 0 or 1 */
 #define MAX_LDA_ADDR 0175777            /* Higher addresses will not be written to the LDA */
                                         /* TODO: If we 'variablize' MAX_LDA_ADDR force it to odd */
 
@@ -70,6 +69,14 @@ DAMAGE.
 #ifndef DEFAULT_ALIGNMENT
 #define DEFAULT_ALIGNMENT ' '           /* Default output text alignment: choose ' ' or '\t' */
 #endif
+
+#ifndef BADBIN_XFERAD
+#define BADBIN_XFERAD 0                 /* xferad to use if badbin > 0: choose 0 or 1 */
+#endif
+
+#ifndef XFERAD_WHEN_ZERO
+#define XFERAD_WHEN_ZERO 2              /* xferad to use if the <inputfile> provides XFER=0 */
+#endif                                  /* Set to zero to disable this functionality (keep 0=0) */
 
 #define WORD(cp) ((*(cp) & 0xff) + ((*((cp)+1) & 0xff) << 8))
 
@@ -100,8 +107,8 @@ char           *blkname[] = {
                               " "  "ENDGSD ",  /* 02 */  /* Only one - must be before ENDMOD and no more GSDs follow */
                               " "  "TXT    ",  /* 03 */  /* At least one RLD must precede the first TXT (i.e. psect)*/
                               " "  "RLD    ",  /* 04 */
-                              " "  "ISD    ",  /* 05 */
-                              " "  "ENDMOD ",  /* 06 */  /* One only - must be last in OBJ */
+                              " "  "ISD    ",  /* 05 */  /* The RT-11 linker ignores this */
+                              " "  "ENDMOD ",  /* 06 */  /* Only one - must be last in OBJ */
                               "*"  "LIBHDR ",  /* 07 */
                               "*"  "LIBEND "   /* 10 */
                             };
@@ -109,7 +116,7 @@ char           *blkname[] = {
 char           *gsdname[] = {
                               " "  "MODNAME",  /* 00 */
                               "*"  "CSECT  ",  /* 01 */
-                              " "  "ISD    ",  /* 02 */
+                              " "  "ISD    ",  /* 02 */  /* The RT-11 linker ignores this */
                               " "  "XFER   ",  /* 03 */
                               " "  "GLOBAL ",  /* 04 */  /* Each name ought to be unique */
                               " "  "PSECT  ",  /* 05 */  /* This seems to work if not unique */
@@ -121,7 +128,7 @@ char           *gsdname[] = {
 char           *rldname[] = {
                               "*"  "Not used (0)  ",  /* 00 */
                               " "  "Internal reloc",  /* 01 */
-                              " "  "Global   reloc",  /* 02 */
+                              "*"  "Global   reloc",  /* 02 */
                               "*"  "Internal Disp ",  /* 03 */
                               "*"  "Global   Disp ",  /* 04 */
                               "*"  "Global + Off  ",  /* 05 */
@@ -645,6 +652,7 @@ void got_rld(
             rad50name(cp + i + 2, name);
             if (loud) printf("\tGlobal%s %o=%s\n", byte, addr, name);
             i += 6;
+            badbin++;
             break;
         case 03:
             if (loud) printf("\tInternal displaced%s %o=%o\n", byte, addr, WORD(cp + i + 2));
@@ -1129,7 +1137,7 @@ int main(
 
     /**** Warn about possible command line mistakes ****/
 
-    if (summary || (loud && badfmt))
+    if (summary || (loud && badfmt) || (loud && bin))
         printf("\n");
 
     if (!bin) {
@@ -1222,10 +1230,12 @@ int main(
         if (new_xferad <= MAX_LDA_ADDR) {
             xferad = new_xferad;
         } else {
+#if XFERAD_WHEN_ZERO
             if (xferad == 0) {
-                fprintf(stderr, "Transfer address 0 has been modified to 2\n");
-                xferad = 2;
+                fprintf(stderr, "Transfer address 0 has been modified to %d\n", XFERAD_WHEN_ZERO);
+                xferad = XFERAD_WHEN_ZERO;
             }
+#endif
         }
 
         if (highest_addr == 0)  /* If -w is specified, there will always be data */
@@ -1248,7 +1258,10 @@ int main(
     }
 
     if (badbin && (bin || word_patch)) {
-        fprintf(stderr, "Possibly %d mistakes in the binary file '%s'\n", badbin, outfile);
+        fprintf(stderr, "Possibly %d mistake%s in the binary file '%s'\n",
+                badbin, (badbin == 1) ? "" : "s", outfile);
+        if (!summary)
+            fprintf(stderr, "Try 'dumpobj -q -s ...' to see a summary of records with mistakes\n");
         xferad = BADBIN_XFERAD;
     }
 
