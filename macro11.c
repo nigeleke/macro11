@@ -552,13 +552,13 @@ int main(
                     (list_pass_0 > 1) ? "reported" : "found");
         if (report_errcnt != errcount)
             fprintf(stderr, "%d Error%s reported during pass 2\n",
-                    (report_errcnt == 1) ? " was" : "s were",
-                    report_errcnt);
+                    report_errcnt,
+                    (report_errcnt == 1) ? " was" : "s were");
     } else if (enabl_debug) {
         if (report_errcnt != errcount)
             fprintf(stderr, "%d Error%s actually reported\n",
-                    (report_errcnt == 1) ? " was" : "s were",
-                    report_errcnt);
+                    report_errcnt,
+                    (report_errcnt == 1) ? " was" : "s were");
     }
 
 /* TODO: Add this to the end of the listing file (?)
