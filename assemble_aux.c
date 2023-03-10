@@ -4,6 +4,7 @@
 */
 
 #include <stdlib.h>
+#include <ctype.h>
 #include <string.h>
 #include <assert.h>
 
@@ -72,12 +73,15 @@ int store_word(
     int size,
     unsigned word)
 {
+    if (size == 1)
+        if((word & 0x8000) ? word < 0xff00 : word > 0xff)
+            report_warn(str, "Truncated BYTE %o to %o\n", word, word & 0xff);
     change_dot(tr, size);
     list_word(str, DOT, word, size, "");
     return text_word(tr, &DOT, size, word);
 }
 
-/* store_word stores a word to the object file and lists it to the
+/* store_displaced_word stores a word to the object file and lists it to the
    listing file */
 
 static int store_displaced_word(
@@ -209,7 +213,8 @@ void implicit_gbl(
         switch (value->type) {
         case EX_UNDEFINED_SYM:
             {
-                if (!(value->data.symbol->flags & SYMBOLFLAG_LOCAL)) {
+                if (!(value->data.symbol->flags & SYMBOLFLAG_LOCAL) &&
+                    !isdigit(value->data.symbol->label[0])) {
                     /* Unless it's a local symbol, */
                     if (enabl_gbl) {
                         /* either make the undefined symbol into an
@@ -265,6 +270,12 @@ void migrate_implicit(
         if (sym) {
             continue;                  // It's already in there.  Great.
         }
+
+        if (isym->flags & SYMBOLFLAG_LOCAL)
+            continue;                  /* Do not attempt to migrate local symbols */
+                                       /* These are noticed on pass 1 but they will ...
+                                        * ... be reported as invalid expressions later */
+
         isym->flags |= SYMBOLFLAG_IMPLICIT_GLOBAL;
         sym = add_sym(isym->label, isym->value, isym->flags, isym->section,
                       &symbol_st, NULL);
@@ -453,7 +464,7 @@ static void store_complex(
     text_complex_begin(&tx);           /* Open complex expression */
 
     if (!complex_tree(&tx, value)) {   /* Translate */
-        report(refstr, "Invalid expression (complex relocation)\n");
+        report_err(refstr, "Invalid expression (complex relocation)\n");
         store_word(refstr, tr, size, 0);
     } else {
         list_word(refstr, DOT, 0, size, "C");
@@ -479,7 +490,7 @@ static void store_complex_displaced(
     text_complex_begin(&tx);
 
     if (!complex_tree(&tx, value)) {
-        report(refstr, "Invalid expression (complex displaced relocation)\n");
+        report_err(refstr, "Invalid expression (complex displaced relocation)\n");
         store_word(refstr, tr, size, 0);
     } else {
         list_word(refstr, DOT, 0, size, "C");
@@ -695,7 +706,7 @@ int do_word(
     int comma;
 
     if (size == 2 && (DOT & 1)) {
-        report(stack->top, ".WORD on odd boundary\n");
+        report_warn(stack->top, ".WORD on odd boundary\n");
         store_word(stack->top, tr, 1, 0);       /* Align it */
     }
 
@@ -713,8 +724,19 @@ int do_word(
 
                 cp = value->cp;
             } else {
-                report(stack->top, "Invalid expression in .WORD\n");
-                cp = "";                /* force loop to end */
+                if (value->type == EX_ERR &&
+                    value->cp != NULL &&
+                    value->data.child.right == NULL &&
+                    value->data.child.left != NULL &&
+                    value->data.child.left->type == EX_LIT) {
+                    report_warn(stack->top, "Invalid expression stored in .WORD\n");
+
+                    store_value(stack, tr, size, value->data.child.left);
+                    cp = value->cp;
+                } else {
+                    report_err(stack->top, "Invalid expression in .WORD\n");
+                    cp = "";                /* force loop to end */
+                }
             }
 
             free_tree(value);
@@ -742,7 +764,7 @@ int check_branch(
     int             s_offset;
 
     if (offset & 1) {
-        report(stack->top, "Bad branch target (odd address)\n");
+        report_err(stack->top, "Bad branch target (odd address)\n");
     }
 
     /* Sign-extend */
@@ -755,7 +777,7 @@ int check_branch(
 
         /* printf can't do signed octal. */
         my_ltoa(s_offset, temp, 8);
-        report(stack->top, "Branch target out of range (distance=%s)\n", temp);
+        report_err(stack->top, "Branch target out of range (distance=%s)\n", temp);
         return 0;
     }
     return 1;
@@ -790,6 +812,16 @@ void write_globals(
     if (ident)
         gsd_ident(&gsd, ident);
 
+    /* TODO: If -ysl > 6 we need to build a sorted list of global symbols
+     *       and check that any symbol written is unique in the first
+     *       six characters -- added advantage: symbols will be stored
+     *       in the object file in sorted order within their PSECTs */
+
+    /* TODO: We also need to check that all PSECTs are unique in the
+     *       first 6 chars */
+
+    /* TODO: Warnings if global symbols or PSECTs have '_' in them */
+
     /* write out each PSECT with its global stuff */
     /* Sections must be written out in the order that they
        appear in the assembly file.  */
@@ -815,21 +847,25 @@ void write_globals(
         }
     }
 
-    /* Now write out the transfer address */
-    if (xfer_address->type == EX_LIT) {
-        gsd_xfer(&gsd, ". ABS.", xfer_address->data.lit);
+    /* Finally write out the transfer address */
+    if (xfer_address == NULL) {
+        gsd_xfer(&gsd, ". ABS.", 1);
     } else {
-        SYMBOL         *lsym;
-        unsigned        offset;
-
-        if (!express_sym_offset(xfer_address, &lsym, &offset)) {
-            report(NULL, "Invalid program transfer address\n");
+        if (xfer_address->type == EX_LIT) {
+            gsd_xfer(&gsd, ". ABS.", xfer_address->data.lit);
         } else {
-            gsd_xfer(&gsd, lsym->section->label, lsym->value + offset);
+            SYMBOL         *lsym;
+            unsigned        offset;
+
+            if (!express_sym_offset(xfer_address, &lsym, &offset)) {
+                report_err(NULL, "Invalid program transfer address" /* " [set to 1]" */ "\n");
+            /*  gsd_xfer(&gsd, ". ABS.", 1);  */
+            } else {
+                gsd_xfer(&gsd, lsym->section->label, lsym->value + offset);
+            }
         }
     }
 
     gsd_flush(&gsd);
-
     gsd_end(&gsd);
 }

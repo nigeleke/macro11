@@ -37,6 +37,15 @@ DAMAGE.
 */
 #include <stdio.h>
 
+#ifndef STREAM2__C
+/* GLOBAL VARIABLES */
+
+extern int      stack_depth;    /* The current stack depth */
+
+#endif
+
+#define MAX_STACK_DEPTH 1024    /* The maximum allowed stack depth */
+
 struct stream;
 
 typedef struct stream_vtbl {

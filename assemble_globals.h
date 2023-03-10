@@ -9,7 +9,10 @@
 
 
 
-#define MAX_MLBS 32                    /* number of macro libraries */
+#define START_LOCSYM 30000             /* Start locally generated symbols at 30000$ */
+#define MAX_LOCSYM 65535               /* Strictly, local symbols are 1$ to 65535$ */
+#define BAD_LOCSYM 999999              /* No local symbol may ever be higher than this */
+#define MAX_MLBS 32                    /* Number of macro libraries */
 
 #define MAX_CONDS 256
 typedef struct cond {
@@ -34,6 +37,35 @@ extern int      last_macro_lsb; /* The last block in which a macro
 extern int      last_locsym;    /* The last local symbol number generated */
 
 extern int      enabl_debug;    /* Whether assembler debugging is enabled */
+
+extern int      strictness;              /* How strict (relaxed) do we want to be? */
+                                         /* <0 = relaxed, 0 = normal, >0 = strict */
+
+#ifndef STRINGENTNESS 
+#define STRINGENTNESS 4                  /* Strictness level we consider to be STRINGENT (0-4) */
+#endif
+#define STRINGENT     (strictness >= STRINGENTNESS)  /* As STRICTEST but also follow the MACRO-11 documentation */
+
+#if (STRINGENTNESS > 3)
+#define STRICT        (strictness >  0)  /* Close to MACRO-11 V05.05 syntax */
+#define STRICTER      (strictness >  1)  /* As close as we like or even more */
+#define STRICTEST     (strictness >  2)  /* Really mega-strict (e.g. .END required) */
+#elif (STRINGENTNESS > 2)
+#define STRICT        (strictness >= 0)  /* Close to MACRO-11 V05.05 syntax */
+#define STRICTER      (strictness >  0)  /* As close as we like or even more */
+#define STRICTEST     (strictness >  1)  /* Really mega-strict (e.g. .END required) */
+#elif (STRINGENTNESS > 1)
+#define STRICT        (strictness >= 0)  /* Close to MACRO-11 V05.05 syntax */
+#define STRICTER      (strictness >= 0)  /* As close as we like or even more */
+#define STRICTEST     (strictness >  0)  /* Really mega-strict (e.g. .END required) */
+#else
+#define STRICT        (strictness >= 0)  /* Close to MACRO-11 V05.05 syntax */
+#define STRICTER      (strictness >= 0)  /* As close as we like or even more */
+#define STRICTEST     (strictness >= 0)  /* Really mega-strict (e.g. .END required) */
+#endif
+
+#define RELAXED       (strictness <  0)  /* Relax the rules as much as we like */
+#define VERY_RELAXED  (strictness < -1)  /* Relax the rules so much that even .END isn't the end */
 
 extern int      opt_enabl_ama;  /* May be changed by command line */
 

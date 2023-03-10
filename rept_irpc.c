@@ -80,7 +80,7 @@ STREAM         *expand_rept(
 
     value = parse_expr(cp, 0);
     if (value->type != EX_LIT) {
-        report(stack->top, ".REPT value must be constant\n");
+        report_err(stack->top, ".REPT value must be constant\n");
         free_tree(value);
         return NULL;
     }
@@ -101,7 +101,7 @@ STREAM         *expand_rept(
         levelmod = 1;
     }
 
-    read_body(stack, gb, NULL, FALSE);
+    read_body(stack, gb, ".REPT", FALSE);
 
     list_level += levelmod;
 
@@ -230,7 +230,7 @@ STREAM         *expand_irp(
 
     label = get_irp_sym(cp, &cp, NULL);
     if (!label) {
-        report(stack->top, "Invalid .IRP syntax (symbol or <symbol> expected)\n");
+        report_err(stack->top, "Invalid .IRP syntax (symbol or <symbol> expected)\n");
         return NULL;
     }
 
@@ -238,7 +238,7 @@ STREAM         *expand_irp(
 
     items = getstring(cp, &cp);
     if (!items) {
-        report(stack->top, "Invalid .IRP syntax (string expected)\n");
+        report_err(stack->top, "Invalid .IRP syntax (string expected)\n");
         free(label);
         return NULL;
     }
@@ -253,7 +253,7 @@ STREAM         *expand_irp(
         levelmod++;
     }
 
-    read_body(stack, gb, NULL, FALSE);
+    read_body(stack, gb, ".IRP", FALSE);
 
     list_level += levelmod;
 
@@ -360,7 +360,7 @@ STREAM         *expand_irpc(
 
     label = get_irp_sym(cp, &cp, NULL);
     if (!label) {
-        report(stack->top, "Invalid .IRPC syntax (symbol or <symbol> expected)\n");
+        report_err(stack->top, "Invalid .IRPC syntax (symbol or <symbol> expected)\n");
         return NULL;
     }
 
@@ -368,7 +368,7 @@ STREAM         *expand_irpc(
 
     items = getstring(cp, &cp);
     if (!items) {
-        report(stack->top, "Invalid .IRPC syntax (string expected)\n");
+        report_err(stack->top, "Invalid .IRPC syntax (string expected)\n");
         free(label);
         return NULL;
     }
@@ -383,7 +383,7 @@ STREAM         *expand_irpc(
         levelmod++;
     }
 
-    read_body(stack, gb, NULL, FALSE);
+    read_body(stack, gb, ".IRPC", FALSE);
 
     list_level += levelmod;
 

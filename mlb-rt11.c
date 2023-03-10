@@ -58,11 +58,11 @@ static void     mlb_rt11_extract(
     MLB *mlb);
 
 struct mlb_vtbl mlb_rt11_vtbl = {
-    .mlb_open    = mlb_rt11_open,
-    .mlb_entry   = mlb_rt11_entry,
-    .mlb_extract = mlb_rt11_extract,
-    .mlb_close   = mlb_rt11_close,
-    .mlb_is_rt11 = 1,
+    /* .mlb_open    = */ mlb_rt11_open,
+    /* .mlb_entry   = */ mlb_rt11_entry,
+    /* .mlb_extract = */ mlb_rt11_extract,
+    /* .mlb_close   = */ mlb_rt11_close,
+    /* .mlb_is_rt11 = */ 1,
 };
 
 /*
@@ -194,7 +194,7 @@ MLB            *mlb_rt11_open(
 
         for (i = 0, j = nr_entries; i < j; i++) {
             char           *ent1,
-                           *ent2;
+                           *ent2 = NULL;
             int             w1, w2;
 
             ent1 = buff + (i * entsize);
@@ -238,6 +238,7 @@ MLB            *mlb_rt11_open(
         mlb->directory = memcheck(malloc(sizeof(MLBENT) * mlb->nentries));
         memset(mlb->directory, 0, sizeof(MLBENT) * mlb->nentries);
 
+        { /**/
         unsigned long   max_filepos;
 
         fseek(mlb->fp, 0, SEEK_END);
@@ -272,7 +273,7 @@ MLB            *mlb_rt11_open(
                 mlb->directory[j].length = BYTEPOS(ent + entsize) - BYTEPOS(ent);
             } else {
                 unsigned long   max = max_filepos;
-                char            c;
+                int             c;
 
                 /* Look for last non-zero */
                 do {
@@ -291,6 +292,7 @@ MLB            *mlb_rt11_open(
                     mlb->directory[j].length);
 #endif
         }
+        } /**/
 
         free(buff);
     }
@@ -363,7 +365,7 @@ BUFFER         *mlb_rt11_entry(
         if (c == '\r' || c == 0)       /* If it's a carriage return or 0,
                                           discard it. */
             continue;
-        *bp++ = c;
+        *bp++ = (char) c;
     }
     *bp++ = 0;                         /* Store trailing 0 delim */
 

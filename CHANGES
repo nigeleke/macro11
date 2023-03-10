@@ -1,4 +1,581 @@
-??.??.202?: Rhialto
+
+----------- Mike Hill's entries ------------------
+
+09-Mar-2023: Mike Hill
+        Added syntax checking for .CROSS & .NOCROSS and create GX symbols if undefined (as V05.05)
+        - symbols.h
+          Added #define SYMBOLFLAG_NONE 0 (for readability)
+          Added dump_sym() because I needed to test the changes
+        - symbols.c
+          Made dump_sym() non-static
+          Added the missing "%s" to dump_sym() for " IMPLICIT_GLOBAL"
+        - assemble.c
+          Joined P_CROSS & P_NOCROSS to P_GLOBAL
+          Added a 'switch' to set up the symtab and flags for each directive
+          add_sym() to the relevant table with the relevant flags
+        Added and/or fixed a few comments (TODOs)
+        - rad50.c
+        - rad50.h
+        - macro11.c
+        - macro11.h (put today's date in VERSIONSTR)
+
+07-Mar-2023: Mike Hill
+        Allow EMT and TRAP to have -ve argument
+        - assemble.c
+        Move SPL from OC_1REG to OC_MARK (to improve error handling & messages)
+        - symbols.c
+        - assemble.c
+        Fix <x _ a> when x is external and < 0 also a is < 0
+        - extree.c
+          Make EX_LSH use three operations (EX_AND & EX_DIV & EX_AND) if right < 0
+
+06-Mar-2023: Mike Hill
+        Prepare for the addition of report_err(), report_warn(), and report_fatal()
+        - listing.h
+          Add #define for them - TODO: we create instances!
+        Put in report_warn() where the result would be the same if no warning were issued & also report_err() where not
+        - assemble.c (and fixed wrong return value in P_PACKED:)
+        - assemble_aux.c
+        - extree.c
+        - macro11.c
+        - macros.c
+        - parse.c
+        - rept_irpc.c
+        - symbols.c
+        If not -strict, allow alpha-numerics as quotes to .INCLUDE & .LIBRARY
+        - parse.c
+        Improve EX_DIV and EX_MUL optimization and fix (best-effort) EX_LSH (see above)
+        - extree.c
+        Fix .FLT2 .FLT4 .LIMIT on odd boundary
+        - assemble.c
+          Added a new section which forces all directives 'which require it' to an even boundary
+          Clean up related tests which have become unnecessary
+
+05-Mar-2023: Mike Hill
+        Allow '_' as a valid rad50 character (only if -yus)
+          Note that the resulting object file may not be compatible with RSX/RT-11 if global symbols or psects contain '_'
+        - rad50.h
+          Add a routine rad50_enable_underscore() to switch this feature on
+        - rad50.c
+          Renamed radtbl[] to rad50tbl[] and added rad50charset[] & rad50charset_ul[]
+          unrad50() always translates using '_' and returns "???" if invalid
+            Recompile dumpobj to make use of this and display GLOBAL symbols & PSECTs with '_' correctly
+        - macro11.c
+          Call rad50_enable_underscore() if -yus
+        .BYTE should report values outside the range -400:377
+          Also applies to .ASCII & .ASCIZ <...> format
+        - assemble_aux.c
+          Added a check to store_word()
+        Added the symbol value to the listing for .NCHR [always] and .NTYPE [only visible if .LIST ME]
+        - assemble.c
+          Changed P_NCHR: & P_NTYPE:  
+
+04-Mar-2023: Mike Hill
+        Disallow '.' used in the wrong context
+        - macros.c
+          defmacro() now rejects '.' as a macro name
+        - assemble.c
+          Reject '.' as LHS of ':' (at reassemble:)
+          Do not allow '.' as a .GLOBL or .WEAK argument
+        Parse .INCLUDE and .LIBRARY correctly
+        - assemble.c
+          P_LIBRARY now catches getstr_fn() == NULL
+        - parse.c
+          getstr_fn() returns NULL if final quote does not match initial quote (-strict)
+          ditto for empty filename (e.g. .INCLUDE //)
+
+03-Mar-2023: Mike Hill
+        assert() some (just 'pass' at the moment) of the variables we use are really correct (and won't cause trouble later)
+        - macro11.c
+          Added assert() to prepare_pass()
+
+02-Mar-2023: Mike Hill
+        Fix .IF DF .directive is TRUE (e.g. .IIF DF .WORD .ERROR ; We know '.WORD')
+        - symbols.c
+          Set pseudo symbols flags = SYMBOLFLAG_GLOBAL
+        Clean up the symbol table creation (making the code easier to read)
+        - symbols.h
+          Sorted and aligned the pseudo_ops and instruction_ops
+          Put the comments on the same line as the operand_codes
+        - symbols.c
+          Replace ADD_SYM() with 3 new #defines for ADD_SYM_REGISTER, ADD_SYM_PSEUDO, and ADD_SYM_INST
+          Sort and align them all within their categories (pseudo sorted by value-text!)
+          
+28-Feb-2023: Mike Hill
+        Added STRINGENT to check the code against the documentation not the V05.05 assembler
+        - assemble_globals.h
+          Added #define STRINGENT and STRINGENTNESS
+        - macro11.c
+          Added -stringent and changed usage etc.
+        Added pseudo-symbols for directives with > 6 characters if -ysl > 6 and not -stringent
+        - symbols.c
+        Added the same error as JMP Rn to TSTSET and WRTLCK
+        - assemble.c
+
+27-Feb-2023: Mike Hill
+        Fix A / B where A[15] or B[15] = 0x8000
+        - extree.c
+          EX_DIV: Made '/' signed
+          EX_LSH: Optimized A _ B if A == 0 and comment that '_' always does a signed shift (see above)
+        Pre-process each directive before parsing the arguments
+          This catches stuff like ;;;;; // .ASCII writing "random" bytes to the object file without error
+        - assemble.c
+          Added a large switch block at the beginning of 'case SECTION_PSEUDO:'
+          Removed individual checks from many of the other cases
+
+25-Feb-2023: Mike Hill
+        Handle EX_DIV by 0 (e.g. A = 1/0)
+        - extree.c
+          Unless RELAXED we throw an error else result = 0
+        Allow certain complex expressions of EX_ERR type to be stored and assigned to symbols
+        - assemble_aux.c
+          Added additional code to do_word()
+        - assemble.c
+          Added additional code to symbol assignment ('=') at reassemble:
+        - parse.c
+          Remove ^PL / ^PH code to generate a new_ex_lit(0) on pass 1 ...
+            ... because we now handle this correctly
+        Do not store values > 16 bits (e.g. A=200000 // B=A/2 sets B->100000 not 0)
+        - extree.c
+          new_ex_lit() now stores only 16-bits
+        - symbols.c
+          Added a check in check_sym_invariants()
+
+24-Feb-2023: Mike Hill
+        Allow .END to continue parsing for -relaxed*2
+        - assemble_globals.h
+          Added #define VERY_RELAXED
+        - assemble.c
+          if (VERY_RELAXED) just continue parsing the source file(s)
+
+23-Feb-2023: Mike Hill
+        Check for correct format of .ENDR and .ENDM (if -strict)
+        - macros.c
+        Fixed (or commented) all the 'FIXME's
+        - assemble.c
+        Added .IFZ, etc. (PAL-11R defines .IFEQ .IFZ etc. as backwards compat.)
+	- symbols.h
+          Renamed P_IFDF to P_IFXX
+        - assemble.c
+          Renamed P_IFDF to P_IFXX
+        - symbols.c
+          Renamed P_IFDF to P_IFXX
+          add_sym() for .IFZ .IFEQ .IFNZ .IFNE .IFL .IFLT .IFG .IFGT .IFLE .IFGE
+        Disallow ^PLpsect and ^PHpsect if -strict*3
+        - parse.c
+        Generate errors for constants out-of-range
+        - parse.c
+          Catch ' at EOL (MACRO-11 'A' error)
+          Catch " at EOL or 1 character before EOL (MACRO-11 'A' error)
+          Catch constant value > 0177777 (if -strict*3) (MACRO-11 'T' error)
+
+22-Feb-2023: Mike Hill
+        Disallow '_' (Logical SHift) if -strict*3
+        - parse.c
+        Report .END within .IF (unless -relaxed)
+        - assemble.c
+        Report .END within .MACRO & .REPT / .IRP / .IRPC (if -strict)
+        - macros.c
+        Better handling of unclosed .MACRO & .REPT / .IRP / .IRPC
+        - macros.c
+          read_body() remembers stack->top of the directive and ...
+          ... writes out an error on pass 1 if no .ENDM / .ENDR found
+        - rept_irpc.c
+          Pass ".REPT" / ".IRP" / ".IRPC" to read_body()
+
+21-Feb-2023: Mike Hill
+        Improve line number handling if \f is in the stream
+        - stream2.c
+          file_getline() now skips leading FF characters
+          We still mess up the line numbers of lines containing \f (as before)
+          Similarly, process vertical-tabs (VT or \v) as EOL characters
+
+20-Feb-2023: Mike Hill
+        For -yd and not -yl1 ... show the .SBTTL contents during pass 1
+          This is an aid to debugging until we get the whole TOC stuff working
+        - assemble.c
+          Added code to P_SBTTL: to do this
+        report() if .END is missing for '-strict -strict -strict' [-strict*3]
+        - assemble_globals.h
+          Added #define STRICTEST
+        - assemble_aux.c
+          Handle xfer_address == NULL
+        - macro11.c
+          Only if !STRICTEST initialize the xfer_address to ex_lit(1) (else NULL)
+          If STRICTEST and no .END -> ".END was not supplied"
+        Put in a stub to catch a recursive stack_push() ...  E.g. for a macro which calls itself
+        - stream2.h
+          Add stack_depth & MAX_STACK_DEPTH
+        - stream2.c
+          Init stream_depth to 0 and update it in stack_push() and stack_pop()
+          If we hit MAX_STACK_DEPTH write an error message to stderr
+          TODO: Handle this better (perhaps with a fatal() routine)
+
+19-Feb-2023: Mike Hill
+        Fixed .RADIX <> 8 at the end of pass 1 causing pass 2 to start with wrong radix
+        - macro11.c
+          Set radix = 8; in prepare_pass()
+        - assemble_globals.c
+          Initialize radix to zero instead of 8
+        Catch undefined local symbol references (must not be turned into global references)
+        - assemble_aux.c
+          EX_UNDEFINED_SYM: now also detects local symbols (starting with a digit)
+          migrate_implicit() should not migrate local symbols
+        - symbols.c
+          Force add_sym() to always set SYMBOLFLAG_LOCAL for local symbols (even if not requested)
+            And throw a report() message (but you'll only see it on pass 1 if you -yl1 -yd)
+          Only dump_sym() in check_sym_invariants() if (enabl_debug)
+        - assemble.c
+          free(label) for local symbols in P_GLOBL: and also parse the rest of the line
+          Also catch more .GLOBL / .WEAK syntax errors
+        Catch local symbols out of range (0$ and much-too-large$)
+        - assemble_globals.h
+          Added BAD_LOCSYM = 999999
+        - parse.c
+          get_symbol() -> report() error for local symbol out-of-range (without stack->top)
+        Retro-fit STRICT to changes made earlier which ought to be behind -strict
+        - assemble.c
+          report() 'Local symbol may not assigned a value' is now only for -strict
+          Replaced all 'STRICT_IF_DF_NDF' with if (STRICT) { ... } = -strict
+            Test this with the regression tests - if okay, remove the non-strict code
+          Enhanced STRICT_IF_DF_NDF_RECURSES -> if '-strict -strict' we DO NOT allow recursion < ... >
+            Test this with the regression tests - if okay, set the #define to 0
+          JMP Rn etc. is now not shown if -strict -strict (-strict might be better)
+          'Z' type errors are not shown if -relaxed
+          -strict: report() if .PSECT flags change (but change them anyway)
+          -strict: disallow 'MARK #' (same for EMT / TRAP)
+          -relaxed: allow 'MARK' without parameters else report()
+
+16-Feb-2023: Mike Hill
+        - assemble.c
+          Improve .END handling
+          Fix MARK to require a parameter (also after '#' - not strictly supported)
+
+15-Feb-2023: Mike Hill
+        Add a check for closing quote to .REM
+        - assemble.c
+          Also write a message for the original .REM if the closing quote is missing
+          And the quote characters must be case-insensitive (regardless of .ENABL LCM)
+
+14-Feb-2023: Mike Hill
+        Fix .REM to list "discarded" lines and check for EOL after closing quote
+        - assemble.c
+
+13-Feb-2023: Mike Hill
+        Retro-fitted changes by Rhialto made on 12-Feb-2023
+        - parse.c
+          Added (unsigned char) to isdigit() and toupper()
+        - rept_irpc.c
+          Changed message "Invalid .IRPC syntax (label" -> "... (symbol"
+        - symbols.c
+          Added comments to MED6X and MED74C (and new ones to STA0, STB0, XFC)
+
+12-Feb-2023: Mike Hill
+        Additions to report() on pass 1
+        - macro11.c
+          Print errcount after the symbol table has been listed (because '-l -' wants it there)
+          Added a counter to main() to count the report() errors during pass 1
+            This is only printed for -yl1 and/or -yd
+        - listing.c
+          Added a "*" at the left of the listing line for each report() on that line [pass1] (-yl1 only)
+            Maybe do this for pass2 (?) -or- [in future] write out the error-letter(s) like MACRO-11
+
+11-Feb-2023: Mike Hill
+        -macro11.h
+          Do not #include "git-info.h" #if defined(SKIP_GIT_INFO)
+        - dumpobj.c
+          Only compile the auto-detect code #if DEFAULT_OBJECTFORMAT_RT11 < 0
+          #include "git-info.h" #if !defined(SKIP_GIT_INFO)
+          Show the GIT_VERSION and GIT_AUTHOR_DATE if available
+          #define VERSION to 11-Feb-2023
+
+10-Feb-2023: Mike Hill
+        Add some -yd symbols to the symbol table for use by .MAC regression tests
+        - listing.h
+          Add global variable 'report_errcnt'
+        - symbols.h
+          Add ADD_DEBUG_SYM() etc.
+        - macro11.c
+          Set 'report_errcnt=0' in prepare_pass()
+          Show the 'report_errcnt' after showing the 'errcount'
+          Add "$M11.D =: <enabl_debug>" symbol (constant: count of -yd options)
+          Add "$M11.E =: <error_count>" symbol (increases with each error)
+          Add "$M11.S =: <strictness>"  symbol (constant: -strict = 1, -relaxed = -1, else 0)
+            Add them as permanent symbols to stop them being unintentionally overwritten
+          Send them to the listing
+        - listing.c
+          Update 'report_errcnt' in report() and update "$M11.E"
+          Stop report() printing the error message twice if option "-l -" is used
+        Keep the symbol table clean in add_symbols()
+        - symbols.c
+          Show the section name in check_sym_invariants() for "undefinedness"
+          The final ADD_SYM() used flags=0 which is "naughty" (but I don't see the need)
+
+09-Feb-2023: Mike Hill
+        Add '-strict' and '-relaxed' command-line options
+        - assemble_globals.h
+          Add strictness variable (<0 = relaxed, 0 = normal, >0 = strict, >1 = stricter)
+        - assemble_globals.c
+          Initialize strictness variable to zero
+        - macro11.c
+          Add help text for -strict & -relaxed (and update some other help text)
+          Parse -strict & -relaxed to generate value for 'strictness'
+          Added a message to show and list the -yd debug level (if > 0)
+          If debugging, print the version information to the lstfile (unless '-l -')
+             Only write the 'version' to the list file if -yd is followed by -v on the command line
+          Added a 'pass #' -yd debug message at the start of each pass
+
+08-Feb-2023: Mike Hill
+        - dumpobj.c
+          Fixed gcc warnings (embedded comments; int<unsigned; shadowed 'cp', etc.)
+          Removed trailing newline if no errors are reported
+        Cleanup (only comments etc.)
+        - assemble.c
+        - macro11.h
+        - macro11.c
+        - parse.c
+        - symbols.c
+        Various fixes
+        - macro11.c
+          Changed exit() to return /* exit */ in main()
+          Do not allow multiple '-l' or '-o' options
+          Error message if no source files provided
+          We now display an error message for file open errors
+        - assemble.c
+          Fix .TITLE module-name starting with a digit being seen as invalid
+            Also fixes NULL reference in gsd_mod() for invalid/empty .TITLE module-name
+          .IF/.IIF now reports an error if the condition is unknown (e.g. .IIF QE 0 ...)
+          P_IF: Do not try to free() NULL label (although allowed)
+          List value 000010 for .RADIX (without parameter)
+          Added a stub to catch invalid .INCLUDE format
+            Add to -strict and copy to P_LIBRARY later
+        - parse.c
+          "Junk at end of line" message for < 20 bytes of junk now suppresses the CR/LF
+          Replaced 'switch' with 'if' in getstring_fn() - see comments
+
+07-Feb-2023: Mike Hill
+        - assemble.c
+          Labels (LABEL:) now always list their location
+          .PSECT used to reference NULL if the psect-name or arguments are not valid labels
+          .CSECT should only accept an optional name and no flags
+          Added a TODO stub to handle incompatible flags (unlike MACRO-11 which silently uses them)
+            old_flags are always populated and checked -> and will report an error when -strict[est] is used (later)
+
+04-Feb-2023: Mike Hill
+        - dumpobj.c
+          Added -h option to show the help text and examples
+
+02-Feb-2023: Mike Hill
+        Enhancements (fixes) to dumpobj
+        - dumpobj.c
+          LDA output will not write data > MAX_LDA_ADDR
+          Added command options:
+            -align    : aligns GSD fields (easier to read)
+            -noalign  : GSD format remains the same as previous versions
+            -nosort   : does not sort the GSD entries (preserves OBJ order)
+            -of <org> : same as '-o' but does not relocate 'internal' RLDs
+            -w <...>  : add patch words to the LDA file
+            -x        : provide a new LDA transfer address
+          Summary '-s' now shows a list of PSECTs (currently disabled)
+          Error message if an LDA file is written with more than one PSECT with data
+
+01-Feb-2023: Mike Hill
+        Enhancements (fixes) to dumpobj
+        - dumpobj.c
+          Now writes the relocated 'Internal' RLD to the LDA output
+          Added -o <origin> for LDA output
+          Made CSECT + VSECT + 'COMPRTN' + LIBHDR + LIBEND a 'badbin'
+
+31-Jan-2023: Mike Hill
+        Changed the blank PSECT name for '-rsx' to ". BLK." (commented out!)
+        - macro11.c
+        Enhancements to dumpobj
+        - dumpobj.c
+          Implement auto-detection of object type when -rt11 and -rsx not specified
+            #define DEFAULT_OBJECTFORMAT_RT11 -1 /* Enables this option */
+          Added '-q' [quiet] and '-qt' [quiet-text] and '-s' [summary] options
+          Changed the usage text accordingly and added information about dumpobj
+          Count bad format (badfmt) and bad binary errors (badbin)
+
+24-Jan-2023: Mike Hill
+        Implement 'Z' errors [JMP/CALLR/JSR/CALL to Rn is not an error with V05.05]
+        - assemble.c (OC_1GEN & OC_2GEN and OC_JSR)
+           CALLR Rn / CALLR (Rn)+ / JMP (Rn)+
+           CALL Rn / JSR Rn,(Rm)+
+           MOV[B]/CMP/BIT/BIC/BIS/SUB/XOR Rn,[@]-(Rn) and [@](Rn)+
+
+24-Jan-2023: Mike Hill
+        Retrofit all changes made in 0.9wip from GitLab on 17-Aug-2022
+        - assemble.c
+          Changed report() from 'Illegal' to 'Invalid' etc.
+          Parse multiple labels (A: B: ...) using 'while' instead of 'goto'
+          New parameter to add_sym(... , *stream);
+          Added in P_PACKED: (after moving 'int' and 'char *' to the top of the block)
+        - assemble_aux.c
+          New parameter to add_sym(... , *stream);
+          Changed report() from 'Illegal' to 'Invalid'
+        - macros.c
+          Changed report() from 'Illegal' to 'Invalid'
+        - parse.c
+          ^R allows > 3 characters
+        - rept_irpc.c
+          Changed report() from 'Illegal' to 'Invalid' ... 'expected'
+        - symbols.c
+          New parameter to add_sym(... , *stream);
+          New parameter to check_sym_invariants(... , *stream);
+          New checks: permanent symbol redefinition/phase error
+          New report: 'Bad symbol redefinition'
+        - symbols.h
+          New parameter to add_sym(... , *stream);
+
+17-Jan-2023: Mike Hill
+        Bug fixes
+        - extree.c
+          evaluate_rec(,EVALUATE_DEFINEDNESS) guarantees new_ex_lit(non-zero)
+          This now solves the real issue of '.IF DF A ! B' not firing when A=0
+        - assemble.c
+          Correctly parse multiple labels on one line (e.g. 'A: B: C: NOP')
+
+16-Jan-2023: Mike Hill
+        Enhancements
+        - assemble.c
+          Added an option to have STRICT_IF_DF_NDF (without EVALUATE_DEFINEDNESS)
+          This parses the line directly without creating a dummy tree etc.
+          There is a further option to define STRICT_IF_DF_NDF_RECURSES ...
+          ... which enables the use of < ... > within a .IF/.IIF DF/NDF
+          This is to solve the issue of '.IF DF A ! B' not firing even if A is defined
+          See 19-Feb-2023 above!
+
+09-Jan-2023: Mike Hill
+        Enhancements
+        - assemble.c:
+          '.EOT' is now ignored (same as MACRO-11 V05.05)
+          '.MDELETE' now throws an error if no arguments
+          Added a place-holder for 'P_PACKED:' (see 0.9wip above)
+          Added some 'TODO:' comments for future reference
+          Local symbols may not be set global (using '::') (at reassemble:)
+            Setting is ignored - symbol remains local
+          Local symbols may not be the LHS of an '=' assignment (at reassemble:)
+            Local symbol is assigned anyway - error message only
+        Changed generated local symbol range from 32768$ to 30000$
+        - assemble_globals.h
+          Added #define START_LOCSYM to 30000 and MAX_LOCSYM to 65535
+        - assemble_globals.c
+          Changed initializer for last_locsym from 32768 to zero
+        - macro11.c
+          Use START_LOCSYM-1 instead of 32767
+        - macros.c
+          Use START_LOCSYM instead of 32768
+        - parse.c
+          Reject local symbols > MAX_LOCSYM
+          Note that V05.05 simply wrapped the value (65537$ == 1$)
+
+07-Jan-2023: Mike Hill
+        Updates
+        - macro11.h:
+          #define BASE_VERSION "0.8.1" [ change to "0.9" when we're done ]
+          #define VERSIONSTR changes
+        - macro11.c:
+          Added 'modified' string to print_version()
+
+06-Jan-2023: Mike Hill
+        Enhancements
+        - assemble.c:
+          '.PAGE' now checks there are no arguments
+
+05-Jan-2023: Mike Hill
+        Enhancements
+        - assemble.c:
+          '.BLKW' now throws an error on a byte boundary and forces .EVEN
+	  '.PRINT' and '.ERROR' both now list the value (if provided)
+          '.END' now shows the transfer address (if any) in the listing
+            .PRINT/.ERROR/.END need more work to list the same value as SYM=x should
+        Bug fixes
+        - macro11.c:
+          Changed error messages for '-ysl'
+        - symbols.c:
+          Changed '.MDELE' to '.MDELETE' (else mismatch if -ysl > 6)
+          Changed '.NOCRO' to '.NOCROSS' (else mismatch if -ysl > 6)
+        - assemble.c:
+          '.END' now terminates processing of all input streams
+        - parse.c
+          Local-symbol length increased to SYMMAX_MAX (e.g. for 0000$10)
+
+05-Jan-2023: Mike Hill
+        Created a 'WIN32 BASELINE' dumpobj.exe & macro11.exe from yesterday's sources
+          This is to locally test against Rhialto's original 0.8 from 07-Jul-2022
+        Compile with /W4 (warning level 4) with _CRT_SECURE_NO_WARNINGS
+          In order to get the maximum error checking possible for future edits
+        - util.c:
+          Use the 'comma' operator to avoid 'assignment within conditional expression'
+          Typecast to avoid 'conversion ... possible loss of data' warnings
+        - assemble.c:
+          Typecast to avoid 'conversion ... possible loss of data' warnings
+          Remove unreachable 'return 1' after 'for(;;)'
+        - macros.c:
+          Move assignment to avoid 'assignment within conditional expression'
+          Unpack complex 'if' to avoid 'assignment within conditional expression'
+          Avoid 'non-constant aggregate initializer' for 'macstack'
+        - mlb2.c:
+          Use the 'comma' operator to avoid 'assignment within conditional expression'
+        - mlb-rsx.c:
+          Assign NULL to 'ent2' to avoid 'potentially uninitialized local variable'
+          Typecast to avoid 'conversion ... possible loss of data' warnings
+        - mlb-rt11.c:
+          Assign NULL to 'ent2' to avoid 'potentially uninitialized local variable'
+          Changed 'char' to 'int' for 'c = fgetc()'
+          Typecast to avoid 'conversion ... possible loss of data' warning
+        - object.c:
+          Typecast to avoid 'conversion ... possible loss of data' warnings
+        - parse.c:
+          Move assignments to avoid 'assignment within conditional expression'
+          Comment out 'if (1)' to avoid 'conditional expression is constant'
+          Typecast to avoid 'conversion ... possible loss of data' warning
+        - stream2.c:
+          Typecast to avoid 'conversion ... possible loss of data' warning
+
+04-Jan-2023: Mike Hill
+        Restored portability with C/C++ from Microsoft Visual Studio 9.0
+          Microsoft (R) 32-bit C/C++ Version 15.00.30729.01 for 80x86
+          Microsoft (R) Incremental Linker Version 9.00.30729.01
+          Compile with /W3 (warning level 3) with _CRT_SECURE_NO_WARNINGS
+        - dumpobj.c:
+          For WIN32, use stricmp() instead of strcasecmp()
+          Comment out memcheck() because it is duplicated from util.h
+          Put a {} block around embedded type statement
+            These are marked with /**/ in all source modules
+            Indentation has NOT been changed
+        - util.c:
+          For WIN32, use a local copy of [my_]strtok_r()
+          Put a {} block around embedded type statements (see above)
+        - git-info.h:
+          Created dummy file because macro11.h #includes it
+        - macro11.c:
+          For WIN32, use stricmp() instead of strcasecmp()
+          Move type statement outside for() statement
+          Put a {} block around embedded type statement
+        - assemble.c:
+          Move type statement outside for() statements
+          Put a {} block around embedded type statements
+        - macros.c:
+          If WIN32, use a local copy of [my_]stpncpy()
+        - parse.c
+          Put a {} block around embedded type statements
+          Change statement order to avoid embedded type statements
+          Move type statement outside for() statement
+        - mlb-rt11.c:
+          Commented out mlb_rt11_vtbl structure names
+          Put a {} block around embedded type statement
+        - mlb-rsx.c:
+          Commented out mlb_rsx_vtbl structure names
+          Put a {} block around embedded type statements
+        - symbols.c:
+          Moved type definition to avoid embedded type statement
+          Put a {} block around embedded type statements
+
+----------- Rhialto's entries ------------------
+
+??.??.202?: Rhialto [GitLab version from 17.08.2022]
         version 0.9wip:
         - Fix ^R to ignore RAD50 characters after the first three.(Paul Koning)
         - Add .packed directive.
@@ -125,9 +702,7 @@
         Begin rework by Joerg Hoppe (j_hoppe@t-online.de)
         All my changes are marked with "/*JH: .. */" comments
 
-
------------ Richard Krebiehls entries ------------------
-
+----------- Richard Krebiehl's entries ------------------
 
 15-July-2001
         version 0.2

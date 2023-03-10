@@ -1,3 +1,5 @@
+#define STREAM2__C
+
 /* functions for managing a stack of file and buffer input streams. */
 
 /*
@@ -45,6 +47,10 @@ DAMAGE.
 #include "util.h"
 
 #include "stream2.h"
+
+/* GLOBAL VARIABLES */
+
+int             stack_depth = 0;  /* The current stack depth */
 
 /* BUFFER functions */
 
@@ -286,21 +292,34 @@ static char    *file_getline(
     if (feof(fstr->fp))
         return NULL;
 
-    /* Read single characters, end of line when '\n' or '\f' hit */
+    /* Special control-character rules for RSX-11M/PLUS:-
+     *    The only special characters allowed are VT (^K or \v) and FF (^L or \f).
+     *     These may appear (multiple times) on a line on their own or at the end of a line.
+     *     Repeated characters are treated as one (VT is ignored and FF does one .PAGE).
+     *     They may NOT appear at the beginning of a line containing other characters.
+     *     They may also NOT be embedded within a line.
+     *     Else they will cause the 'I' error and be replaced by '?' in the listing.
+     * RT-11 treats these characters the same as CR/LF */
+
+    /* Skip any leading '\f' or '\v' on the line */
+    /* TODO: If we get a '\f' we ought to do the same as .PAGE */
+
+    while (c = fgetc(fstr->fp), (c == '\f' || c == '\v'))
+        /* Do nothing */;
+
+    /* Read single characters, end of line when '\n' or '\f' or '\v' hit */
 
     i = 0;
-    while (c = fgetc(fstr->fp), c != '\n' && c != '\f' && c != EOF) {
-        if (c == 0)
-            continue;                  /* Don't buffer zeros */
-        if (c == '\r')
-            continue;                  /* Don't buffer carriage returns either */
-        if (i < STREAM_BUFFER_SIZE - 2)
-            fstr->buffer[i++] = c;
+    while (c != '\n' && c != '\f' && c != '\v' && c != EOF) {
+        if (c != '\0' && c != '\r')  /* Don't buffer NUL or CR */
+            if (i < STREAM_BUFFER_SIZE - 2)
+                fstr->buffer[i++] = (char) c;
+        c = fgetc(fstr->fp);
     }
 
-    fstr->buffer[i++] = '\n';          /* Silently transform formfeeds
-                                          into newlines */
-    fstr->buffer[i] = 0;
+    fstr->buffer[i++] = '\n';          /* Silently transform trailing
+                                          formfeeds and vertical-tabs into newlines */
+    fstr->buffer[i] = '\0';
 
     if (c == '\n')
         fstr->stream.line++;           /* Count a line */
@@ -377,6 +396,7 @@ void stack_pop(
     STREAM         *top = stack->top;
     STREAM         *next = top->next;
 
+    stack_depth--;
     top->vtbl->delete(top);
     stack->top = next;
 }
@@ -387,6 +407,21 @@ void stack_push(
     STACK *stack,
     STREAM *str)
 {
+
+    stack_depth++;
+
+    /* TODO: Handle "infinite" stack_push() attempts */
+    /*       Callers of stack_push() should maintain their own counters */
+    /*       At the moment, just say when we hit the limit */
+
+    if (stack_depth == MAX_STACK_DEPTH) {
+        fprintf(stderr, "internal error: stack_depth = %d, source = '%.40s'\n",
+                        stack_depth, str->name);
+    /*  Chances are that we'll crash 'out-of-memory' pretty soon  */
+    /*  At least we'll have a good idea why  */
+    /*  exit(EXIT_FAILURE);  */
+    }
+
     str->next = stack->top;
     stack->top = str;
 }

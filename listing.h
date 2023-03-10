@@ -1,4 +1,3 @@
-
 #ifndef LISTING__H
 #define LISTING__H
 
@@ -12,11 +11,11 @@
 */
 
 typedef struct lstformat {
-    char            flag[2];    /* Error flags */
-    char            line_number[6];     /* Line number */
-    char            pc[8];      /* Location */
-    char            words[8][3];        /* three instruction words */
-    char            source[1];  /* source line */
+    char            flag[2];         /* Error flags */
+    char            line_number[6];  /* Line number */
+    char            pc[8];           /* Location */
+    char            words[8][3];     /* three instruction words */
+    char            source[1];       /* source line */
 } LSTFORMAT;
 
 
@@ -34,6 +33,8 @@ extern int      list_level;     /* Listing control level.  .LIST
 extern FILE    *lstfile;
 
 extern int      list_pass_0;    /* Also list what happens during the first pass */
+
+extern int      report_errcnt;  /* Count the number of times report() has been called */
 
 #endif
 
@@ -60,10 +61,15 @@ void            list_source(
 void            list_flush(
     void);
 
+/* TODO: Implement report_err() & report_warn() & report_fatal() */
+
+#define         report_err   report
+#define         report_warn  report
+#define         report_fatal report
+
 void            report(
     STREAM *str,
     char *fmt,
     ...);
-
 
 #endif

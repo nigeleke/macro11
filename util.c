@@ -55,6 +55,37 @@ DAMAGE.
 #include <unistd.h>
 #endif
 
+#ifdef WIN32
+#define strtok_r my_strtok_r
+char           *my_strtok_r(
+    char *s,
+    const char *delim,
+    char **save_ptr)
+{
+    char *end;
+
+    if (s == NULL)
+        s = *save_ptr;
+    if (*s == '\0') {
+        *save_ptr = s;
+        return NULL;
+    }
+    s += strspn (s, delim);
+    if (*s == '\0') {
+        *save_ptr = s;
+        return NULL;
+    }
+    end = s + strcspn (s, delim);
+    if (*end == '\0') {
+        *save_ptr = end;
+        return s;
+    }
+    *end = '\0';
+    *save_ptr = end + 1;
+    return s;
+}
+#endif
+
 static void my_searchenv1(
     char *name,
     char *envname,
@@ -145,10 +176,13 @@ void my_searchenv(
         return;
     }
 
+    { /**/
     char *copy = memcheck(strdup(name));
+
     downcase(copy);
     my_searchenv1(copy, envname, hitfile, hitlen);
     free(copy);
+    } /**/
 }
 
 static void my_searchenv1(
@@ -168,10 +202,11 @@ static void my_searchenv1(
      *
      * Let's not be too critical about the characters we allow in those.
      */
+    { /**/
     char *p = name;
     char c;
 
-    while ((c = *p++)) {
+    while ((c = *p++),c) {
         if (c == ':') {
             my_searchenv2(p, envname, hitfile, hitlen);
             if (*hitfile) {
@@ -188,6 +223,7 @@ static void my_searchenv1(
             return;
         }
     }
+    } /**/
 
     return;
 }
@@ -284,7 +320,7 @@ void upcase(
     char *str)
 {
     while (*str) {
-        *str = toupper((unsigned char)*str);
+        *str = (char) toupper((unsigned char)*str);
         str++;
     }
 }
@@ -295,7 +331,7 @@ void downcase(
     char *str)
 {
     while (*str) {
-        *str = tolower((unsigned char)*str);
+        *str = (char) tolower((unsigned char)*str);
         str++;
     }
 }
@@ -322,7 +358,7 @@ void padto(
 char *defext (char *fn, const char *ext)
 {
     char *ret;
-
+    
     if (strchr (fn, '.'))
         return fn;
     ret = realloc (fn, strlen (fn) + strlen (ext) + 2);

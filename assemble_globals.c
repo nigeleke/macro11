@@ -2,7 +2,7 @@
 #define ASSEMBLE_GLOBALS__C
 
 
-#include "assemble_globals.h"          /* own definitions */
+#include "assemble_globals.h"          /* Own definitions */
 
 #include "object.h"
 
@@ -10,44 +10,46 @@
 /* GLOBAL VARIABLES */
 int             pass = 0;       /* The current assembly pass.  0 = first pass */
 int             stmtno = 0;     /* The current source line number */
-int             radix = 8;      /* The current input conversion radix */
+int             radix = 0;      /* The current input conversion radix */
 
 
 int             lsb = 0;        /* The current local symbol section identifier */
 int             lsb_used = 0;   /* Whether there was a local symbol using this lsb */
 int             next_lsb = 0;   /* The number of the next local symbol block */
-int             last_macro_lsb = 0; /* The last block in which a macro
-                                   automatic label was created */
+int             last_macro_lsb = 0;     /* The last block in which a macro
+                                         * automatic label was created */
 
-int             last_locsym = 32768;    /* The last local symbol number generated */
+int             last_locsym = 0;        /* The last local symbol number generated */
 
 
 int             enabl_debug = 0;        /* Whether assembler debugging is enabled */
 
+int             strictness = 0;         /* Neither -strict nor -relaxed are in effect */
+
 int             opt_enabl_ama = 0;      /* May be changed by command line */
 int             enabl_ama;      /* When set, chooses absolute (037) versus
-                                   PC-relative */
+                                 * PC-relative */
                                 /* (067) addressing mode */
 int             enabl_lsb = 0;  /* When set, stops non-local symbol
-                                   definitions from delimiting local
-                                   symbol sections. */
+                                 * definitions from delimiting local
+                                 * symbol sections. */
 
 int             enabl_gbl = 1;  /* Implicit definition of global symbols */
 
 int             enabl_lc = 1;   /* If lowercase disabled, convert assembler
-                                   source to upper case. */
+                                 * source to upper case. */
 
 int             enabl_lcm = 0;  /* If lowercase disabled, .IF IDN/DIF are
-                                   case-sensitive. */
+                                 * case-sensitive. */
 
 int             enabl_mcl = 0;  /* When set, unknown symbols are looked up
-                                   as if .MCALL <sym> had been done. */
+                                 * as if .MCALL <sym> had been done. */
 
 int             suppressed = 0; /* Assembly suppressed by failed conditional */
 
 
 MLB            *mlbs[MAX_MLBS]; /* macro libraries specified on the
-                                   command line */
+                                 * command line */
 int             nr_mlbs = 0;    /* Number of macro libraries */
 
 COND            conds[MAX_CONDS];       /* Stack of recent conditions */
@@ -73,16 +75,16 @@ the assembler: */
 
 SECTION         register_section = {
     "*REGISTERS*", SECTION_REGISTER, 0, 0, 0, 0
-};                                     /* the section containing the registers */
+};                                     /* The section containing the registers */
 
 SECTION         pseudo_section = {
     "*PSEUDO*", SECTION_PSEUDO, 0, 0, 0, 0
-};                                     /* the section containing the
-                                          pseudo-operations */
+};                                     /* The section containing the
+                                        * pseudo-operations */
 
 SECTION         instruction_section = {
     "*INSTR*", SECTION_INSTRUCTION, 0, 0, 0, 0
-};                                     /* the section containing instructions */
+};                                     /* The section containing instructions */
 
 SECTION         macro_section = {
     "*MACRO*", SECTION_SYSTEM, 0, 0, 0, 0
@@ -93,16 +95,15 @@ SECTION         macro_section = {
 SECTION         absolute_section = {
     ". ABS.", SECTION_SYSTEM, PSECT_GBL | PSECT_COM, 0, 0, 0
 };                                     /* The default
-                                          absolute section */
+                                        * absolute section */
 
 SECTION         blank_section = {
     "", SECTION_SYSTEM, PSECT_REL, 0, 0, 1
 };                                     /* The default relocatable section */
 
 SECTION        *sections[256] = {
-    /* Array of sections in the order they were
-       defined */
+    /* Array of sections in the order they were defined */
     &absolute_section, &blank_section,
 };
 
-int             sector = 2;     /* number of such sections */
+int             sector = 2;     /* Number of such sections */

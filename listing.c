@@ -28,7 +28,9 @@ static char    *binline;        /* for octal expansion */
 
 FILE           *lstfile = NULL;
 
-int             list_pass_0 = 0;/* Also list what happens during the first pass */
+int             list_pass_0 = 0;    /* Also list what happens during the first pass */
+
+int             report_errcnt = 0;  /* Count the number of times report() has been called */
 
 static int      errline = 0;    /* Set if current line has an error */
 
@@ -86,6 +88,17 @@ void list_flush(
     void)
 {
     if (dolist()) {
+        /* TODO: Implement error-letters like MACRO-11 (not trivial) */
+        if (errline && pass == 0) {
+            int             i;
+
+            for (i = 0; i < errline; i++) {
+                if (binline[i] != ' ')
+                    break;
+                binline[i] = '*';
+            }
+        }
+
         padto(binline, offsetof(LSTFORMAT, source));
         fputs(binline, lstfile);
         fputs(listline, lstfile);
@@ -174,11 +187,14 @@ void report(
     char           *name = "**";
     int             line = 0;
 
+    report_errcnt++;
+    if (enabl_debug)
+        UPD_DEBUG_SYM(DEBUG_SYM_ERRCNT, report_errcnt);
+
+    errline++;
     if (!pass && list_pass_0 < 2)
         return;                        /* Don't report now. */
-
-    errline = 1;
-
+    
     if (str) {
         name = str->name;
         line = str->line;
@@ -189,7 +205,7 @@ void report(
     vfprintf(stderr, fmt, ap);
     va_end(ap);
 
-    if (lstfile) {
+    if (lstfile && lstfile != stdout) {
         fprintf(lstfile, "%s:%d: ***ERROR ", name, line);
         va_start(ap, fmt);
         vfprintf(lstfile, fmt, ap);

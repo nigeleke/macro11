@@ -28,6 +28,82 @@
 
 #define CHECK_EOL       check_eol(stack, cp)
 
+#define STRICT_IF_DF_NDF_RECURSES 1    /* 0 = '< ... >' forbidden, else allowed     */
+
+/* Assemble a '.IF DF' or '.IF NDF' statement (or .IIF) */
+
+//    .if df  x & y -> both  must be defined
+//    .if df  x ! y -> either may be defined
+//    .if ndf x & y -> both  must be undefined
+//    .if ndf x ! y -> either may be undefined
+
+static int eval_ifdf_ifndf(
+    char  **cpp,
+    int     if_df,
+    STACK  *stack)
+{
+    char           *cp     = *cpp;
+    int             ok     = TRUE;    /* 0 = false, 1 = true */
+    int             op     = 0;       /* 0 = '&',   1 = '!'  */
+
+    for (;;) {
+        char           *ncp;
+        int             islocal;
+        int             found;
+
+        cp = skipwhite(cp);
+
+#if STRICT_IF_DF_NDF_RECURSES
+        if (!STRICTER && *cp == '<') {
+            ncp = skipwhite(++cp);
+            found = eval_ifdf_ifndf(&ncp, if_df, stack);
+            if (*ncp != '>') {
+                report_err(stack->top, "Missing '>'\n");
+                return 0;
+            }
+            ncp++;
+        } else /* { ... Continues below */
+#endif
+        { /* ... This could be the 'else' part from above */
+            char           *label;
+            SYMBOL         *sym;
+
+            if ((label = get_symbol(cp, &ncp, &islocal)) == NULL) {
+                report_err(stack->top, "Missing symbol name: %s", cp);
+                return 0;
+            }
+            if (islocal) {
+                report_err(stack->top, "Local symbols are not allowed: %s\n", label);
+                free(label);
+                return 0;
+            }
+            sym = lookup_sym(label, &symbol_st);
+            found = (sym != NULL);
+            if (found)
+                 if (sym->flags & SYMBOLFLAG_UNDEFINED)
+                    found = 0;
+            free(label);
+        }
+
+        if (!if_df) found = !found;
+
+        if (op) { /* '!' = OR */
+            ok |= found;
+        } else {  /* '&' = AND */
+            ok &= found;
+        }
+
+        cp = skipwhite(ncp);
+        op = -1;
+        if (*cp == '&') op = 0;
+        if (*cp == '!') op = 1;
+        if (op < 0) break;
+	cp++;
+    }
+    *cpp = cp;
+    return ok;
+}
+
 /* assemble a rad50 value (some number of words). */
 static unsigned * assemble_rad50 (
     char *cp,
@@ -54,14 +130,14 @@ static unsigned * assemble_rad50 (
             value = parse_unary_expr(cp, 0);
             cp = value->cp;
             if (value->type != EX_LIT) {
-                report(stack->top, "Expression must be constant\n");
+                report_err(stack->top, "Expression must be constant\n");
                 radstr[len++] = 0;
             } else if (value->data.lit >= 050) {
-                report(stack->top, "Invalid character value %o\n",
+                report_err(stack->top, "Invalid character value %o\n",
                        value->data.lit & 0xFFFF);
                 radstr[len++] = 0;
             } else {
-                radstr[len++] = value->data.lit;
+                radstr[len++] = (char) value->data.lit;
             }
             free_tree(value);
         } else {
@@ -71,10 +147,10 @@ static unsigned * assemble_rad50 (
                 int         ch = ascii2rad50(*cp++);
 
                 if (ch == -1) {
-                    report(stack->top, "Invalid character '%c'\n", cp[-1]);
+                    report_err(stack->top, "Invalid character '%c'\n", cp[-1]);
                     radstr[len++] = 0;
                 } else {
-                    radstr[len++] = ch;
+                    radstr[len++] = (char) ch;
                 }
 
             }
@@ -148,8 +224,8 @@ static int assemble(
 
         op = get_op(cp, &cp);          /* Look at operation code */
 
-        /* FIXME: this code will blindly look into .REM commentary and
-           find operation codes.  Incidentally, so will read_body().
+        /* No need to FIX ME: this code will blindly look into .REM commentary
+           and find operation codes.  Incidentally, so will read_body().
 
            That doesn't really matter, though, since the original also
            did that (line 72 ends the suppressed conditional block):
@@ -170,7 +246,7 @@ O    75                                         .endc
             return 1;                  /* Not a pseudo-op. */
         switch (op->value) {
         case P_IF:
-        case P_IFDF:
+        case P_IFXX:  /* .IFxx where xx=DF NDF Z EQ NZ NE L LT G GT LE GE */
             suppressed++;              /* Nested.  Suppressed. */
             break;
         case P_IFTF:
@@ -212,18 +288,27 @@ O    75                                         .endc
             ncp++;
             /* maybe it's a global definition */
             if (*ncp == ':') {
-                flag |= SYMBOLFLAG_GLOBAL;      /* Yes, include global flag */
+                if (local) {
+                    report_warn(stack->top, "Local symbol may not be set global '%s'\n", label);
+                } else {
+                    flag |= SYMBOLFLAG_GLOBAL;      /* Yes, include global flag */
+                }
                 ncp++;
             }
 
-            sym = add_sym(label, DOT, flag, current_pc->section, &symbol_st,
-                          stack->top);
+            if (label[0] == '.' && label[1] == '\0')
+                sym = NULL;
+            else
+                sym = add_sym(label, DOT, flag, current_pc->section, &symbol_st,
+                              stack->top);
             cp = ncp;
 
             if (sym == NULL)
-                report(stack->top, "Invalid symbol definition '%s'\n", label);
+                report_err(stack->top, "Invalid label definition '%s'\n", label);
 
             free(label);
+
+            list_location(stack->top, DOT);
 
             /* See if local symbol block should be incremented */
             if (!enabl_lsb && !local) {
@@ -260,10 +345,19 @@ O    75                                         .endc
 
             /* Symbol assignment. */
 
+            if (STRICT && local) {
+                report_warn(stack->top, "Local symbol may not assigned a value '%s'\n", label);
+             /* return 0; // But do it anyway */
+            }
+
             flags = SYMBOLFLAG_DEFINITION | local;
             cp++;
             if (*cp == '=') {
-                flags |= SYMBOLFLAG_GLOBAL;     /* Global definition */
+                if (local) {
+                   report_warn(stack->top, "Local symbol may not be set global '%s'\n", label);
+                } else {
+                    flags |= SYMBOLFLAG_GLOBAL;     /* Global definition */
+                }
                 cp++;
             }
             if (*cp == ':') {
@@ -289,13 +383,13 @@ O    75                                         .endc
                        section must = current. */
 
                     if (!express_sym_offset(value, &symb, &offset)) {
-                        report(stack->top, "Invalid ORG (for relocatable section)\n");
+                        report_err(stack->top, "Invalid ORG (for relocatable section)\n");
                     } else if (SYM_IS_IMPORTED(symb)) {
-                        report(stack->top, "Can't ORG to external location\n");
+                        report_err(stack->top, "Can't ORG to external location\n");
                     } else if (symb->flags & SYMBOLFLAG_UNDEFINED) {
-                        report(stack->top, "Can't ORG to undefined sym\n");
+                        report_err(stack->top, "Can't ORG to undefined sym\n");
                     } else if (symb->section != current_pc->section) {
-                        report(stack->top, "Can't ORG to alternate section (use PSECT)\n");
+                        report_err(stack->top, "Can't ORG to alternate section (use PSECT)\n");
                     } else {
                         DOT = symb->value + offset;
                         list_value(stack->top, DOT);
@@ -305,7 +399,7 @@ O    75                                         .endc
                     /* If the current section is absolute, the value
                        must be a literal */
                     if (value->type != EX_LIT) {
-                        report(stack->top, "Can't ORG to non-absolute location\n");
+                        report_err(stack->top, "Can't ORG to non-absolute location\n");
                         free_tree(value);
                         free(label);
                         return 0;
@@ -327,20 +421,36 @@ O    75                                         .endc
                 sym = add_sym(label, value->data.symbol->value, flags,
                               value->data.symbol->section, &symbol_st, stack->top);
             } else {
-                report(stack->top, "Complex expression cannot be assigned to a symbol\n");
-
-                if (!pass) {
-                    /* This may work better in pass 2 - something in
-                       RT-11 monitor needs the symbol to apear to be
-                       defined even if I can't resolve its value. */
-                    sym = add_sym(label, 0, SYMBOLFLAG_UNDEFINED,
-                                  &absolute_section, &symbol_st, stack->top);
-                } else
-                    sym = NULL;
+                if (value->type == EX_ERR &&
+                    value->cp != NULL &&
+                    value->data.child.right == NULL &&
+                    value->data.child.left != NULL &&
+                    value->data.child.left->type == EX_LIT) {
+                    report_warn(stack->top, "Complex expression has been assigned to a symbol\n");
+                    sym = add_sym(label, value->data.child.left->data.lit, flags, &absolute_section,
+                                  &symbol_st, stack->top);
+                } else {
+                    report_err(stack->top, "Complex expression cannot be assigned to a symbol\n");
+                    if (!pass) {
+                        /* This may work better in pass 2 - something in
+                           RT-11 monitor needs the symbol to apear to be
+                           defined even if I can't resolve its value. */
+                        sym = add_sym(label, 0, SYMBOLFLAG_UNDEFINED,
+                                      &absolute_section, &symbol_st, stack->top);
+                    } else {
+                        sym = NULL;
+                    }
+                }
             }
 
-            if (sym != NULL)
-                list_value(stack->top, sym->value);
+            if (sym != NULL) {
+                if (sym->section->flags & PSECT_REL) {
+            // c.f. list_word(stack->top, DOT, sym->value, 2, "'");  /* TODO: Need new routine to list_value_flags() */
+                    list_value(stack->top, sym->value); /* TODO: REMOVE after line above is done! */
+                } else {
+                    list_value(stack->top, sym->value);
+                }
+            }
 
             free_tree(value);
             free(label);
@@ -380,27 +490,208 @@ do_mcalled_macro:
 
             switch (op->section->type) {
             case SECTION_PSEUDO:
+
+                /* Handle all directives which require DOT to be even */
+
                 switch (op->value) {
+                case P_BLKW:
+                case P_FLT2:
+                case P_FLT4:
+                case P_LIMIT:
+                case P_RAD50:
+                case P_WORD:
+                    if (DOT & 1) {
+                        report_warn(stack->top, "%s on odd boundary [.EVEN implied]\n", op->label);
+                        DOT++;  /* And fix it */
+                   }
+                }
+
+                /* Parse the basic syntax of the directive (and its stringentness):-
+                 *
+                 *     0) Skip any white-space
+                 *     1) Ignore directives which do NOTHING if they have no arguments
+                 *     2) Report an error for directives which do NOT accept arguments
+                 *     3) Report an error for directives which REQUIRE arguments but have none
+                 *     4) Pass any directives which allow optional arguments unchanged
+                 *     5) Report an error if we forgot any directives (all must appear here!)
+                 */
+
+                cp = skipwhite(cp);
+                switch (op->value) {
+
+                /* 1) Ignore directives which do NOTHING if they have no arguments */
+
+                case P_CROSS:    /* TODO: move to (4) if we implement xref */
+                case P_DSABL:    /* -stringent */
+                case P_ENABL:    /* -stringent */
+                case P_FLT2:     /* -stringent */
+                case P_FLT4:     /* -stringent */
+                case P_GLOBL:    /* -stringent */
+                case P_MCALL:    /* -stringent */
+                case P_MDELETE:  /* -stringent */
+                case P_NOCROSS:  /* TODO: move to (4) if we implement xref */
+                case P_WEAK:     /* -stringent */
+
+                    if (!EOL(*cp))
+                        break;
+                    if (!STRINGENT)
+                        return 1;
+                    if (op->value == P_CROSS || op->value == P_NOCROSS)
+                        return 1;
+                    report_warn(stack->top, "Directive '%s' should have arguments\n", op->label);
+                    return 1;  /* Not strictly an error */
+
+                /* 2) Report an error for directives which do NOT accept arguments */
+
+                case P_ASECT:
+                case P_ENDC:
+                case P_ENDR:
+                case P_EOT:     /* -stringent (MACRO-11 ignores this depricated directive) */
+                case P_EVEN:
+                case P_IFF:
+                case P_IFT:
+                case P_IFTF:
+                case P_LIMIT:
+                case P_MEXIT:
+                case P_ODD:
                 case P_PAGE:
+                case P_RESTORE:
+                case P_SAVE:
+
+                    if (!EOL(*cp)) {
+                        report_warn(stack->top, "Directive '%s' does not accept arguments\n", op->label);
+                        while (!EOL(*cp))
+                            cp++;  /* Remove all the arguments (just in case we CHECK_EOL etc. */
+                    }
+                    if (!STRINGENT)
+                        break;  /* Regardless of the message (if any) */
+                    if (op->value != P_EOT)
+                        break;
+                    report_warn(stack->top, "Directive '%s' is depricated\n", op->label);
+                    return 1;  /* Not strictly an error and there's nothing to do */
+
+                /* 3) Report an error for directives which REQUIRE arguments but have none */
+
+                case P_ASCII:
+                case P_ASCIZ:
+                case P_IDENT:
+                case P_INCLUDE:
+                case P_IRP:
+                case P_IRPC:
+                case P_LIBRARY:
+                case P_IF:       /* MACRO-11 treats this as TRUE and expects a .ENDC etc. */
+                case P_IFXX:     /* -stringent (but the same action as P_IF) */
+                case P_IIF:
+                case P_MACRO:
+                case P_NARG:
+                case P_NCHR:
+                case P_NTYPE:
+                case P_RAD50:
+                case P_REM:
+                case P_REPT:
+                case P_TITLE:
+
+                    if (STRINGENT && op->value == P_IFXX)
+                        report_warn(stack->top, "Directive '%s' is depricated\n", op->label);
+                    if (!EOL(*cp))
+                        break;
+                    report_err(stack->top, "Directive '%s' requires arguments\n", op->label);
+                    if (op->value == P_IF || op->value == P_IFXX)
+                        push_cond(TRUE, stack->top);  /* Despite the error, we act on the .IF */
+                    return 0;
+
+                /* 4) Pass any directives which allow optional arguments unchanged */
+
+                case P_BLKB:    /* -stringent */
+                case P_BLKW:    /* -stringent */
+                case P_BYTE:    /* -stringent */
+                case P_CSECT:
+                case P_END:
+                case P_ENDM:
+                case P_ERROR:
+                case P_LIST:
+                case P_NLIST:
+                case P_PACKED:  /* -stringent */
                 case P_PRINT:
+                case P_PSECT:
+                case P_RADIX:
                 case P_SBTTL:
-                case P_CROSS:
-                case P_NOCROSS:
-                    return 1;          /* Accepted, ignored.  (An obvious
-                                          need: get assembly listing
-                                          controls working fully. ) */
+                case P_WORD:    /* -stringent */
+
+                    if (!EOL(*cp))
+                        break;
+                    if (!STRINGENT)
+                        break;
+                    if (op->value != P_BLKB && op->value != P_BLKW &&
+                        op->value != P_BYTE && op->value != P_PACKED &&
+                        op->value != P_WORD)
+                        break;
+                    report_warn(stack->top, "Directive '%s' should have arguments\n", op->label);
+                    break;  /* Not strictly an error */
+
+                /* 5) Report an error if we forgot any directives (all must appear here!) */
+
+                default:
+                    report_err(stack->top, "Directive '%s' is not yet supported\n", op->label);
+                    return 0;
+                }
+
+                /* At this point, we only have directives which need to do something
+                 * cp will either point to a character (skipwhite done) or eol.
+                 * If the directive should be on an even boundary, it will be. */
+       
+                switch (op->value) {
+
+                case P_EOT:
+                   /* MACRO-11 ignores this depricated directive */
+                   return 1;
+
+                case P_PAGE:
+                   /* TODO: Is listed in .MACROs and does not throw page
+                    *       Is not listed if outside a .MACRO definition */
+                   return 1;
+
+                case P_SBTTL:
+                    /* TODO: If we have page headings and TOC ...
+                     *       remember that ';' is valid within the subtitle text
+                     *       This is done on pass 1 if not .NLIST TOC */
+
+                    /* This block is just so we can see the .SBTTL for debugging */
+                    if (enabl_debug && !pass && !list_pass_0) {
+                        FILE           *ofile = lstfile;
+
+                        if (enabl_debug && ofile == NULL)
+                            ofile = stderr;
+
+                        if (ofile != NULL ) {
+                            cp = skipwhite(cp);
+                            fputs("TOC -- ", ofile);
+
+                            while (*cp != '\n')
+                                fputc(*cp++, ofile);
+                            fputc(*cp, ofile);
+                        }
+                    }  /* END-OF-DEBUGGING-STUFF */
+
+                    return 1;
+
                 case P_LIST:
                     if (pass > 0) {
-                        cp = skipwhite(cp);
-                        if (EOL(*cp))
+                        if (EOL(*cp)) {
                             list_level++;
+                            return 1;
+                        }
                     }
-                    return 1;
+                    return 1;          /* Accepted, ignored.  (An obvious
+                                        * need: get assembly listing
+                                        * controls working fully. ) */
+
                 case P_NLIST:
                     if (pass > 0) {
-                        cp = skipwhite(cp);
-                        if (EOL(*cp))
+                        if (EOL(*cp)) {
                             list_level--;
+                            return 1;
+                        }
                     }
                     return 1;
 
@@ -408,7 +699,16 @@ do_mcalled_macro:
                     if (ident)          /* An existing ident? */
                         free(ident);    /* Discard it. */
 
-                    ident = assemble_rad50 (cp, 2, NULL, stack);
+                    /* TODO: .IDENT (eol)     ;*A error - and handled correctly here
+                     *       .IDENT //        ;   Okay  - and handled correctly here
+                     *       .IDENT /X/ /Y/   ;   Okay  - and handled correctly here
+                     *       .IDENT xABCx     ;*A error
+                     *       .IDENT /abc      ;*A no (or mismatched) terminator
+                     *       .IDENT /abc+ef/  ;*A error - and handled correctly here
+                     *       .IDENT /ABC/DEF  ;*A Junk at EOL
+                     *       Only discard the old ident if the new one is valid */
+
+                    ident = assemble_rad50(cp, 2, NULL, stack);
                     return 1;
 
                 case P_RADIX:
@@ -417,19 +717,20 @@ do_mcalled_macro:
                         EX_TREE        *value;
                         int             ok = 1;
 
-                        cp = skipwhite(cp);
                         if (EOL(*cp)) {
                             /* If no argument, assume 8 */
                             radix = 8;
+                            list_value(stack->top, radix);
                             return 1;
                         }
+
                         /* Parse the argument in decimal radix */
                         radix = 10;
                         value = parse_expr(cp, 0);
                         cp = value->cp;
 
                         if (value->type != EX_LIT) {
-                            report(stack->top, "Argument to .RADIX must be constant\n");
+                            report_err(stack->top, "Argument to .RADIX must be constant\n");
                             radix = old_radix;
                             ok = 0;
                         } else {
@@ -437,8 +738,8 @@ do_mcalled_macro:
                             list_value(stack->top, radix);
                             if (radix != 8 && radix != 10 &&
                                 radix != 2 && radix != 16) {
+                                report_err(stack->top, "Argument to .RADIX (%d) must be 2, 8, 10, or 16\n", radix);
                                 radix = old_radix;
-                                report(stack->top, "Argument to .RADIX must be 2, 8, 10, or 16\n");
                                 ok = 0;
                             }
                         }
@@ -457,7 +758,7 @@ do_mcalled_macro:
                             if (parse_float(cp, &cp, (op->value == P_FLT4 ? 4 : 2), flt)) {
                                 /* All is well */
                             } else {
-                                report(stack->top, "Bad floating point format\n");
+                                report_err(stack->top, "Bad floating point format\n");
                                 ok = 0;         /* Don't try to parse the rest of the line */
                                 flt[0] = flt[1] /* Store zeroes */
                                        = flt[2]
@@ -476,22 +777,38 @@ do_mcalled_macro:
                     }
 
                 case P_ERROR:
-                    report(stack->top, "%.*s\n", strcspn(cp, "\n"), cp);
-                    return 0;
+                    report_err(stack->top, "%.*s\n", strcspn(cp, "\n"), cp);
+
+                case P_PRINT:
+                    if (!EOL(*cp)) {
+                        EX_TREE        *value = parse_expr(cp, 0);
+
+                     /* TODO: List both the location and [if provided] the value */
+
+                        cp = value->cp;
+                        if (value->type == EX_LIT)
+                            list_value(stack->top, value->data.lit);
+                        else if (value->type == EX_SYM || value->type == EX_TEMP_SYM)
+                            list_value(stack->top, value->data.symbol->value);
+                        else
+                            report_warn(stack->top, "Complex expression to %s is not supported\n", op->label);
+                        free_tree(value);
+                    }
+                    return CHECK_EOL && (op->value == P_PRINT);
 
                 case P_SAVE:
                     if (sect_sp >= SECT_STACK_SIZE - 1) {
-                        report(stack->top, "Too many saved sections for .SAVE\n");
+                        report_err(stack->top, "Too many saved sections for .SAVE\n");
                         return 0;
                     }
                     sect_sp++;
                     sect_stack[sect_sp] = current_pc->section;
                     dot_stack[sect_sp] = DOT;
-                    return CHECK_EOL;
+                    return 1;
 
                 case P_RESTORE:
                     if (sect_sp < 0) {
-                        report(stack->top, "No saved section for .RESTORE\n");
+                        report_err(stack->top, "No saved section for .RESTORE\n");
                         return 0;
                     } else {
                         go_section(tr, sect_stack[sect_sp]);
@@ -502,7 +819,7 @@ do_mcalled_macro:
                         }
                         sect_sp--;
                     }
-                    return CHECK_EOL;
+                    return 1;
 
                 case P_NARG:
                     {
@@ -513,7 +830,7 @@ do_mcalled_macro:
                         label = get_symbol(cp, &cp, &islocal);
 
                         if (label == NULL) {
-                            report(stack->top, "Bad .NARG syntax (symbol expected)\n");
+                            report_err(stack->top, "Bad .NARG syntax (symbol expected)\n");
                             return 0;
                         }
 
@@ -523,7 +840,7 @@ do_mcalled_macro:
                              str = str->next) ;
 
                         if (!str) {
-                            report(str, ".NARG not within macro expansion\n");
+                            report_err(str, ".NARG not within macro expansion\n");
                             free(label);
                             return 0;
                         }
@@ -541,22 +858,26 @@ do_mcalled_macro:
                     {
                         char           *string;
                         int             islocal;
+                        int             nchars;
 
                         label = get_symbol(cp, &cp, &islocal);
 
                         if (label == NULL) {
-                            report(stack->top, "Bad .NCHR syntax (symbol expected)\n");
+                            report_err(stack->top, "Bad .NCHR syntax (symbol expected)\n");
                             return 0;
                         }
 
                         cp = skipdelim(cp);
 
                         string = getstring(cp, &cp);
+                        nchars = strlen(string);
+                        free(string);
 
-                        add_sym(label, strlen(string), SYMBOLFLAG_DEFINITION | islocal,
+                        add_sym(label, nchars, SYMBOLFLAG_DEFINITION | islocal,
                                 &absolute_section, &symbol_st, stack->top);
                         free(label);
-                        free(string);
+
+                        list_value(stack->top, nchars);
                         return CHECK_EOL;
                     }
 
@@ -568,21 +889,21 @@ do_mcalled_macro:
 
                         label = get_symbol(cp, &cp, &islocal);
                         if (label == NULL) {
-                            report(stack->top, "Bad .NTYPE syntax (symbol expected)\n");
+                            report_err(stack->top, "Bad .NTYPE syntax (symbol expected)\n");
                             return 0;
                         }
 
                         cp = skipdelim(cp);
 
                         if (!get_mode(cp, &cp, &mode, &error)) {
-                            report(stack->top,
-                                   "Bad .NTYPE addressing mode (%s)\n", error);
+                            report_err(stack->top, "Bad .NTYPE addressing mode (%s)\n", error);
                             free(label);
                             return 0;
                         }
 
                         add_sym(label, mode.type, SYMBOLFLAG_DEFINITION | islocal,
                                 &absolute_section, &symbol_st, stack->top);
+                        list_value(stack->top, mode.type);
                         free_addr_mode(&mode);
                         free(label);
 
@@ -596,15 +917,18 @@ do_mcalled_macro:
                         char            hitfile[FILENAME_MAX];
 
                         if (name == NULL) {
-                            report(stack->top, "Bad .INCLUDE file name\n");
+                            report_err(stack->top, "Bad .INCLUDE file name\n");
                             return 0;
                         }
 
                         name = defext (name, "MAC");
                         my_searchenv(name, "INCLUDE", hitfile, sizeof(hitfile));
 
+                        /* TODO: if (STRICT) exit if we can't .INCLUDE the file ...
+                         *       MACRO-11 throws ".INCLUDE directive file error" and exits */
+
                         if (hitfile[0] == '\0') {
-                            report(stack->top, "Unable to find .INCLUDE file \"%s\"\n", name);
+                            report_fatal(stack->top, "Unable to find .INCLUDE file \"%s\"\n", name);
                             free(name);
                             return 0;
                         }
@@ -613,7 +937,7 @@ do_mcalled_macro:
 
                         incl = new_file_stream(hitfile);
                         if (incl == NULL) {
-                            report(stack->top, "Unable to open .INCLUDE file \"%s\"\n", hitfile);
+                            report_fatal(stack->top, "Unable to open .INCLUDE file \"%s\"\n", hitfile);
                             return 0;
                         }
 
@@ -623,27 +947,55 @@ do_mcalled_macro:
                     }
 
                 case P_REM:
+                    /* Read and list [or discard] lines until one with a closing quote */
+                    /* TODO: Extension: .NLIST REM (?) [ -e REM | -d REM ] */
                     {
                         char            quote[4];
+                        char            quote_ch = *cp++;
+                        STREAM          top_here = { NULL, NULL, 0, NULL };
 
-                        /* Read and discard lines until one with a
-                           closing quote */
+                        if (quote_ch == '\0' || quote_ch == '\n') {  /* ';' is allowed */
+                            report_err(stack->top, "Unexpected end-of-line (quote character expected)\n");
+                            return 0;
+                        }
 
-                        cp = skipwhite(cp);
-                        quote[0] = *cp++;
-                        quote[1] = '\n';
-                        quote[2] = 0;
+                        /* Remember where the .REM started in case we need to report_err() it */
+                        {
+                            int             len = strlen(stack->top->name) + 1;
+
+                            top_here.name = memcheck(malloc(len));
+                            memcpy(top_here.name, stack->top->name, len);
+                            top_here.line = stack->top->line;
+                        }
+
+                         /* V05.05: .REM x ... X works (it is case insensitive) */
+                        quote[0] = (char) toupper((unsigned char) quote_ch);
+                        quote[1] = (char) tolower((unsigned char) quote_ch);
+                        quote[2] = '\n';
+                        quote[3] = 0;
 
                         for (;;) {
                             cp += strcspn(cp, quote);
-                            if (*cp == quote[0])
-                                break; /* Found closing quote */
-                            cp = stack_getline(stack);     /* Read next input line */
-                            if (cp == NULL)
-                                break; /* EOF */
+                            if (*cp == quote[0] || *cp == quote[1])
+                                break;
+
+                            list_flush();
+                            line = stack_getline(stack);     /* Read next input line */
+                            if (line == NULL) {
+                                report_err(&top_here, "Closing quote to .REM %c (here) is missing\n", quote_ch);
+                                free(top_here.name);
+                                return 0;  /* EOF */
+                            }
+                            if (!enabl_lc) {                   /* If lower case disabled, */
+                                upcase(line);                  /* turn it into upper case. */
+                            }
+                            cp = line;
+                            list_source(stack->top, line);     /* List source */
                         }
+                        free(top_here.name);
                     }
-                    return 1;
+                    cp++;              /* Skip the closing quote */
+                    return CHECK_EOL;  /* MACRO-11 does not allow further non-comment stuff on line */
 
                 case P_IRP:
                     {
@@ -665,8 +1017,16 @@ do_mcalled_macro:
 
                 case P_LIBRARY:
                     {
-                        char            hitfile[FILENAME_MAX];
                         char           *name = getstring_fn(cp, &cp);
+                        char            hitfile[FILENAME_MAX];
+
+                        if (name == NULL) {
+                            report_err(stack->top, "Bad .LIBRARY file name\n");
+                            return 0;
+                        }
+
+                        /* TODO: if (STRICT) exit if we can't open the .LIBRARY file ...
+                         *       MACRO-11 throws ".LIBRARY directive file error" and exits */
 
                         name = defext (name, "MLB");
                         my_searchenv(name, "MCALL", hitfile, sizeof(hitfile));
@@ -674,12 +1034,12 @@ do_mcalled_macro:
                         if (hitfile[0]) {
                             mlbs[nr_mlbs] = mlb_open(hitfile, 0);
                             if (mlbs[nr_mlbs] == NULL) {
-                                report(stack->top, "Unable to register macro library \"%s\"\n", hitfile);
+                                report_fatal(stack->top, "Unable to register macro library \"%s\"\n", hitfile);
                             } else {
                                 nr_mlbs++;
                             }
                         } else {
-                            report(stack->top, "Unable to locate macro library \"%s\"\n", name);
+                            report_fatal(stack->top, "Unable to locate macro library \"%s\"\n", name);
                         }
                         free(name);
                     }
@@ -707,8 +1067,7 @@ do_mcalled_macro:
 
                             label = get_symbol(cp, &cp, NULL);
                             if (!label) {
-                                report(stack->top,
-                                       "Invalid .MCALL syntax (symbol expected)\n");
+                                report_err(stack->top, "Invalid .MCALL syntax (symbol expected)\n");
                                 return 0;
                             }
 
@@ -723,13 +1082,13 @@ do_mcalled_macro:
 
                             /* Do the actual macro library search */
                             if (!do_mcall (label, stack))
-                                report(stack->top, "MACRO '%s' not found\n", label);
+                                report_err(stack->top, "MACRO '%s' not found\n", label);
 
                             free(label);
                         }
                         /* NOTREACHED */
                     }
-                    return 1;
+                    /* NOTREACHED */
 
                 case P_MACRO:
                     {
@@ -739,7 +1098,9 @@ do_mcalled_macro:
                     }
 
                 case P_MDELETE:
-                    return 1;   /* TODO: or should it just be a NOP? */
+                    /* MACRO-11 only really uses this to save assembler memory */
+                    /* TODO: After a macro has been .MDELETEd its use should cause an error */
+                    return 1;
 
                 case P_MEXIT:
                     {
@@ -751,7 +1112,7 @@ do_mcalled_macro:
                         macstr = stack->top;
                         if (macstr->vtbl != &macro_stream_vtbl && macstr->vtbl != &rept_stream_vtbl
                             && macstr->vtbl != &irp_stream_vtbl && macstr->vtbl != &irpc_stream_vtbl) {
-                            report(stack->top, ".MEXIT not within a macro\n");
+                            report_err(stack->top, ".MEXIT not within a .MACRO\n");
                             return 0;
                         }
 
@@ -771,7 +1132,7 @@ do_mcalled_macro:
                     }
 
                 case P_ENABL:
-                    /* FIXME - add all the rest of the options. */
+                    /* TODO: Add all the rest of the options. */
                     while (!EOL(*cp)) {
                         label = get_symbol(cp, &cp, NULL);
                         if (strcmp(label, "AMA") == 0)
@@ -794,7 +1155,7 @@ do_mcalled_macro:
                     return 1;
 
                 case P_DSABL:
-                    /* FIXME Ditto as for .ENABL */
+                    /* TODO: Ditto as for .ENABL */
                     while (!EOL(*cp)) {
                         label = get_symbol(cp, &cp, NULL);
                         if (strcmp(label, "AMA") == 0)
@@ -822,49 +1183,129 @@ do_mcalled_macro:
 
                 case P_TITLE:
                     /* accquire module name */
-                    if (module_name != NULL) {
-                        free(module_name);
-                    }
-                    module_name = get_symbol(cp, &cp, NULL);
+                    {
+                        int             len = 0;
+
+                        while (ascii2rad50(cp[len]) > 0 && len < symbol_len)
+                            len++;
+                        if (!len) {
+                            report_err(stack->top, "Invalid .TITLE module-name\n");
+                            return 0;
+                        }
+
+                        if (module_name != NULL) {
+                            free(module_name);
+                        }
+                        module_name = memcheck(malloc(len + 1));
+                        memcpy(module_name, cp, len);
+                        module_name[len] = '\0';
+                        upcase(module_name);
+                     }
+
+                     /* TODO: If we want page headings ...
+                      *       ... remember that ';' is valid within the title text ...
+                      *       ... and only the first 31 characters are listed */
+
                     return 1;
 
                 case P_END:
                     /* Accquire transfer address */
-                    cp = skipwhite(cp);
-                    if (!EOL(*cp)) {
+                    {
+                        int             retval = 1;
+
                         if (xfer_address)
                             free_tree(xfer_address);
-                        xfer_address = parse_expr(cp, 0);
-                        cp = xfer_address->cp;
-                    }
-                    return CHECK_EOL;
 
-                case P_IFDF:
+                        if (EOL(*cp)) {
+                            xfer_address = new_ex_lit(1);
+                        } else {
+                            xfer_address = parse_expr(cp, 0);
+                            cp = xfer_address->cp;
+                            if (xfer_address->type != EX_LIT &&
+                                xfer_address->type != EX_SYM &&
+                                xfer_address->type != EX_TEMP_SYM) {
+                                report_err(stack->top, "Complex expression to .END is not supported\n");
+                                free_tree(xfer_address);
+                                xfer_address = new_ex_lit(1);
+                                retval = 0;
+                            }
+                        }
+
+                        if (xfer_address->type == EX_LIT)
+                            list_value(stack->top, xfer_address->data.lit);
+                        else {  /* Can only be either EX_SYM or EX_TEMP_SYM */
+                            list_value(stack->top, xfer_address->data.symbol->value);
+                            /* TODO: See symbol assignment - need to list "'" if relatve etc. */
+                        }
+
+                        retval = (retval && CHECK_EOL);
+
+                        if (VERY_RELAXED)  /* Continue processing without error for -relaxed*2 */
+                            return retval;
+
+                        /* TODO: Check if we are within a MACRO call or .REPT / .IRP / .IRPC block */
+                        /*       At the moment, we report references to .END in read_body() - which is not ideal */
+
+                        /* Check if we are within a .IF block (unless -relaxed) */
+                        if (!RELAXED && last_cond >= 0) {
+                            if (STRICT) {  /* If -strict simply report the error */
+                                report_warn(stack->top, ".END within .IF has been ignored\n");
+                                return 0;
+                            }
+                            report_err(stack->top, ".END within .IF has been executed\n");
+                            retval = 0;  /* Else honour it */
+                        }
+
+                        /*  We stop all further assembly here.
+                         *  This means ignoring any further files
+                         *  on the command line and, if we are
+                         *  currently in an .INCLUDE, any outer files. */
+
+                        /* Read and discard any lines following the .END */
+                        /* TODO: Count them and if -yd write the count out (?) */
+                        do
+                            cp = stack_getline(stack);
+                        while (cp != NULL);
+                        return retval;
+                    }
+
+                case P_IFXX:  /* .IFxx where xx=DF NDF Z EQ NZ NE L LT G GT LE GE */
                     opcp = skipwhite(opcp);
                     cp = opcp + 3;     /* Point cp at the "DF" or
-                                          "NDF" part */
+                                          "NDF" part etc. */
                     /* FALLS THROUGH */
                 case P_IIF:
                 case P_IF:
                     {
-                        EX_TREE        *value;
                         int             ok = FALSE;
 
                         label = get_symbol(cp, &cp, NULL);      /* Get condition */
                         cp = skipdelim(cp);
 
                         if (!label) {
-                            report(stack->top, "Missing .(I)IF condition\n");
+                            report_err(stack->top, "Missing %s condition\n", op->label);
                         } else if (strcmp(label, "DF") == 0) {
-                            value = parse_expr(cp, EVALUATE_DEFINEDNESS);
-                            cp = value->cp;
-                            ok = eval_defined(value);
-                            free_tree(value);
+                            if (STRICT) {
+                                ok = eval_ifdf_ifndf(&cp, 1, stack);
+                            } else {
+                                EX_TREE        *value;
+
+                                value = parse_expr(cp, EVALUATE_DEFINEDNESS);
+                                cp = value->cp;
+                                ok = eval_defined(value);
+                                free_tree(value);
+                            }
                         } else if (strcmp(label, "NDF") == 0) {
-                            value = parse_expr(cp, EVALUATE_DEFINEDNESS);
-                            cp = value->cp;
-                            ok = eval_undefined(value);
-                            free_tree(value);
+                            if (STRICT) {
+                                ok = eval_ifdf_ifndf(&cp, 0, stack);
+                            } else {
+                                EX_TREE        *value;
+
+                                value = parse_expr(cp, EVALUATE_DEFINEDNESS);
+                                cp = value->cp;
+                                ok = eval_undefined(value);
+                                free_tree(value);
+                            }
                         } else if (strcmp(label, "B") == 0 ||
                                    strcmp(label, "NB") == 0) {
                             /*
@@ -927,9 +1368,14 @@ do_mcalled_macro:
                             cp = tvalue->cp;
 
                             if (tvalue->type != EX_LIT) {
-                                report(stack->top, "Bad .IF expression\n");
+                                report_err(stack->top, "Bad %s expression\n", op->label);
                                 list_value(stack->top, 0);
                                 free_tree(tvalue);
+
+                                /* TODO: Undefined symbols are treated as zero for '.IF XX'
+                                 *       V05.05 does strange things when XX is undefined for ...
+                                 *       ... '.IIF XX' (I'm not quite sure what) */
+
                                 ok = TRUE;     /* Pick something. */
                             } else {
                                 unsigned        word;
@@ -937,10 +1383,15 @@ do_mcalled_macro:
                                 /* Convert to signed and unsigned words */
                                 sword = tvalue->data.lit & 0x7fff;
 
-                                /* FIXME I don't know if the following
-                                   is portable enough.  */
+                                /* No need to FIX ME:
+                                 * I don't know if the following
+                                 * is portable enough.  It should be but
+                                 * the replacement below surely is.
+                                 * if (tvalue->data.lit & 0x8000)
+                                 *     sword |= ~0x7FFF;   // Render negative */
+
                                 if (tvalue->data.lit & 0x8000)
-                                    sword |= ~0x7FFF;   /* Render negative */
+                                    sword = sword - 0x8000;   /* Render negative */
 
                                 /* Reduce unsigned value to 16 bits */
                                 uword = tvalue->data.lit & 0xffff;
@@ -957,16 +1408,20 @@ do_mcalled_macro:
                                     ok = (sword < 0), word = sword;
                                 else if (strcmp(label, "LE") == 0)
                                     ok = (sword <= 0), word = sword;
-                                else
+                                else {
+                                    report_err(stack->top, "Invalid %s condition '%s'\n", op->label, label);
                                     ok = 0, word = 0;
+                                }
 
-                                list_value(stack->top, word);
+                                if (!STRICTER /* TODO: Replace !STRICTER with an extended listing control */ )
+                                    list_value(stack->top, word);
 
                                 free_tree(tvalue);
                             }
                         }
 
-                        free(label);
+                        if (label)
+                            free(label);
 
                         if (op->value == P_IIF) {
                             stmtno++;  /* the second half is a
@@ -992,53 +1447,49 @@ do_mcalled_macro:
 
                 case P_IFF:
                     if (last_cond < 0) {
-                        report(stack->top, "No conditional block active\n");
+                        report_err(stack->top, "No conditional block active\n");
                         return 0;
                     }
                     if (conds[last_cond].ok)    /* Suppress if last cond
                                                    is true */
                         suppressed++;
-                    return CHECK_EOL;
+                    return 1;
 
                 case P_IFT:
                     if (last_cond < 0) {
-                        report(stack->top, "No conditional block active\n");
+                        report_err(stack->top, "No conditional block active\n");
                         return 0;
                     }
                     if (!conds[last_cond].ok)   /* Suppress if last cond
                                                    is false */
                         suppressed++;
-                    return CHECK_EOL;
+                    return 1;
 
                 case P_IFTF:
                     if (last_cond < 0) {
-                        report(stack->top, "No conditional block active\n");
+                        report_err(stack->top, "No conditional block active\n");
                         return 0;
                     }
-                    return CHECK_EOL;           /* Don't suppress. */
+                    return 1;           /* Don't suppress. */
 
                 case P_ENDC:
                     if (last_cond < 0) {
-                        report(stack->top, "No conditional block active\n");
+                        report_err(stack->top, "No conditional block active\n");
                         return 0;
                     }
 
                     pop_cond(last_cond - 1);
-                    return CHECK_EOL;
+                    return 1;
 
                 case P_ENDM:
-                    report(stack->top, "No macro definition block active\n");
+                    report_err(stack->top, "No .MACRO definition block active\n");
                     return 0;
 
                 case P_ENDR:
-                    report(stack->top, "No repeat block active\n");
+                    report_err(stack->top, "No repeat block active\n");
                     return 0;
 
                 case P_EVEN:
-                    cp = skipwhite(cp);
-                    if (!EOL(*cp)) {
-                        report(stack->top, ".EVEN must not have an argument\n");
-                    }
                     if (DOT & 1) {
                         list_word(stack->top, DOT, 0, 1, "");
                         DOT++;
@@ -1047,9 +1498,6 @@ do_mcalled_macro:
                     return 1;
 
                 case P_ODD:
-                    if (!EOL(*cp)) {
-                        report(stack->top, ".ODD must not have an argument\n");
-                    }
                     if (!(DOT & 1)) {
                         list_word(stack->top, DOT, 0, 1, "");
                         DOT++;
@@ -1063,25 +1511,30 @@ do_mcalled_macro:
                     }
                     go_section(tr, &absolute_section);
                     list_location(stack->top, DOT);
-                    return CHECK_EOL;
+                    return 1;
 
                 case P_CSECT:
                 case P_PSECT:
                     {
                         SYMBOL         *sectsym;
                         SECTION        *sect;
-                        unsigned int    old_flags = ~0u;
+                        unsigned int    old_flags;
 
                         label = get_symbol(cp, &cp, NULL);
                         if (label == NULL) {
                             sect = &blank_section;
+                            cp = skipwhite(cp);
+                            if (*cp != ',' && !EOL(*cp)) {
+                                report_err(stack->top, "Invalid %s name: %s",
+                                           op->label, cp);
+                                return 0;
+                            }
                         }
                         else {
                             sectsym = lookup_sym(label, &section_st);
                             if (sectsym) {
                                 sect = sectsym->section;
                                 free(label);
-                                old_flags = sect->flags;
                             } else {
                                 sect = new_section();
                                 sect->label = label;
@@ -1103,11 +1556,24 @@ do_mcalled_macro:
                             }
                         }
 
+                        old_flags = sect->flags;
+
+                        if (op->value == P_CSECT) {
+                            cp = skipwhite(cp);
+                            if (*cp == ',')
+                                report_warn(stack->top, "Unexpected flag(s) to .CSECT directive: %s", cp);
+                                /* Process them anyway and use them as best we can */
+                        }
+
                         cp = skipdelim(cp);
                         if (!EOL(*cp)) {
                             while (cp = skipdelim(cp), !EOL(*cp)) {
                                 /* Parse section options */
                                 label = get_symbol(cp, &cp, NULL);
+                                if (!label) {
+                                    report_err(stack->top, "Unknown flag(s) to .PSECT directive: %s", cp);
+                                    return 0;
+                                }
                                 if (strcmp(label, "ABS") == 0) {
                                     sect->flags &= ~PSECT_REL;      /* Not relative */
                                     sect->flags |= PSECT_COM;       /* implies common */
@@ -1134,7 +1600,7 @@ do_mcalled_macro:
                                 } else if (strcmp(label, "LCL") == 0) {
                                     sect->flags &= ~PSECT_GBL;      /* Local */
                                 } else {
-                                    report(stack->top, "Unknown flag %s given to .PSECT directive\n", label);
+                                    report_err(stack->top, "Unknown flag '%s' given to .PSECT directive\n", label);
                                     free(label);
                                     return 0;
                                 }
@@ -1146,10 +1612,12 @@ do_mcalled_macro:
                              * first time.
                              * See page 6-38 of AA-KX10A-TC_PDP-11_MACRO-11_Reference_Manual_May88.pdf .
                              */
-                            if (old_flags != ~0u && sect->flags != old_flags) {
+                            if (sect->flags != old_flags) {
                                 /* The manual also says that any different
                                  * flags are ignored, and an error issued.
                                  * Apparently, that isn't true.
+                                 * MACRO-11 silently replaces the old flags
+                                 * with the new.  This seems to be a bug.
                                  * Kermit seems to do this in k11cmd.mac:
                                  *      .psect  $pdata          ; line 16
                                  *      .psect  $pdata  ,ro,d,lcl,rel,con
@@ -1159,10 +1627,10 @@ do_mcalled_macro:
                                  * $PDATA  001074    003   (RO,D,LCL,REL,CON)
                                  */
 
-                                /*
-                                sect->flags = old_flags;
-                                report(stack->top, "Program section flags not identical\n");
-                                */
+                                if (STRICTEST) {
+                                    report_warn(stack->top, "Program section flags not identical\n");
+                                /*  sect->flags = old_flags;  //  Do not restore the flags */
+                                }
                             }
                         }
 
@@ -1176,50 +1644,87 @@ do_mcalled_macro:
                     }                  /* end PSECT code */
                     break;
 
-                case P_WEAK:
+                case P_CROSS:
+                case P_NOCROSS:
+                    /* V05.05 .[NO]CROSS X where X is undefined creates a GX reference */
+
+                    if (EOL(*cp))
+                        return 1;
+
+                    /* Fall through to P_GLOBL (.[NO]CROSS can both create global undefined symbols) */
+
                 case P_GLOBL:
+                case P_WEAK:
+                    /* V05.05 .GLOBL / .WEAK X where X is undefined creates a G reference */
                     {
                         SYMBOL         *sym;
                         int             islocal = 0;
+                        int             retval = 1;
 
-                        while (!EOL(*cp)) {
-                            /* Loop and make definitions for
-                               comma-separated symbols */
+                        SYMBOL_TABLE   *add_table = NULL;
+                        int             add_flags = SYMBOLFLAG_NONE,
+                                        upd_flags = SYMBOLFLAG_NONE;
+
+                        switch (op->value) {
+                        case P_CROSS:
+                        case P_NOCROSS:
+                            add_table = &implicit_st;
+                            add_flags = SYMBOLFLAG_GLOBAL;
+                            upd_flags = SYMBOLFLAG_NONE;
+                            break;
+
+                       case P_GLOBL:
+                           add_table = &symbol_st;
+                           add_flags = SYMBOLFLAG_GLOBAL;
+                           upd_flags = add_flags;
+                           break;
+
+                        case P_WEAK:
+                            add_table = &symbol_st;
+                            add_flags = SYMBOLFLAG_GLOBAL | SYMBOLFLAG_WEAK;  /* TODO: Is this BAD for RSX? */
+                            upd_flags = add_flags;
+                            break;
+                        }
+
+                        do {
+                            /* Loop and make definitions for comma-separated symbols */
                             label = get_symbol(cp, &ncp, &islocal);
+                            if (label[0] == '.' && label[1] == '\0') {
+                                free(label);
+                                label = NULL;
+                            }
+
                             if (label == NULL) {
-                                report(stack->top, "Bad .GLOBL/.WEAK syntax (symbol expected)\n");
+                                report_err(stack->top, "Invalid syntax [symbol expected] ('%.*s')\n",
+                                           (strlen(cp) > 20) ? 20 : strlen(cp)-1, cp);
                                 return 0;
                             }
 
                             if (islocal) {
-                                report(stack->top, "Local label used in .GLOBL/.WEAK\n");
-                                return 0;
+                                report_err(stack->top, "Local label '%s' invalid in %s\n", label, op->label);
+                                retval = 0;
+                            } else {
+                                sym = lookup_sym(label, &symbol_st);
+                                if (sym) {
+                                    sym->flags |= upd_flags;
+                                } else {
+                                    sym = add_sym(label, 0, add_flags,
+                                                  &absolute_section, add_table, stack->top);
+                                }
                             }
-
-                            sym = lookup_sym(label, &symbol_st);
-                            if (sym) {
-                                sym->flags |= SYMBOLFLAG_GLOBAL | (op->value == P_WEAK ? SYMBOLFLAG_WEAK : 0);
-                            } else
-                                sym = add_sym(label, 0,
-                                        SYMBOLFLAG_GLOBAL |
-                                            (op->value == P_WEAK ? SYMBOLFLAG_WEAK : 0),
-                                        &absolute_section, &symbol_st, stack->top);
-
                             free(label);
-                            cp = skipdelim(ncp);
-                        }
+                            cp = skipwhite(ncp);
+                            if (*cp == ',' && !EOL(cp[1]))
+                                cp = skipdelim(cp);
+                        } while (!EOL(*cp));
+                        return retval;
                     }
-                    return CHECK_EOL;
 
                 case P_WORD:
                     {
                         /* .WORD might be followed by nothing, which
                            is an implicit .WORD 0 */
                         if (EOL(*cp)) {
-                            if (DOT & 1) {
-                                report(stack->top, ".WORD on odd boundary\n");
-                                DOT++; /* Fix it, too */
-                            }
                             store_word(stack->top, tr, 2, 0);
                             return 1;
                         } else
@@ -1240,7 +1745,9 @@ do_mcalled_macro:
                         EX_TREE        *value;
                         int             ok = 1;
 
-                        cp = skipwhite(cp);
+                        /* TODO: .BLKB and .BLKW list only the location and not the count ...
+                         *       ... if (!STRICTER) I'd like to see both (or, perhaps, always?) */
+
                         if (EOL(*cp)) {
                             /* If no argument, assume 1. Documented but
                              * discouraged. Par 6.5.3, page 6-32. */
@@ -1252,10 +1759,13 @@ do_mcalled_macro:
                         }
 
                         if (value->type != EX_LIT) {
-                            report(stack->top, "Argument to .BLKB/.BLKW must be constant\n");
+                            report_err(stack->top, "Argument to .BLKB/.BLKW must be constant\n");
                             ok = 0;
                         } else {
-                            list_value(stack->top, DOT);
+                            if ((op->value == P_BLKW) && (DOT & 1))
+                                DOT++; /* Force .BLKW to word boundary */
+                            list_location(stack->top, DOT);
+                  /* TODO:  if (!STRICTER) list_value(stack->top, value->data.lit); // Once we have a routine to do both */
                             DOT += value->data.lit * (op->value == P_BLKW ? 2 : 1);
                             change_dot(tr, 0);
                         }
@@ -1265,6 +1775,9 @@ do_mcalled_macro:
 
                 case P_ASCIZ:
                 case P_ASCII:
+
+                    /* TODO: Check for final matching deimiter & do we need toupper() ? */
+
                     {
                         do {
                             cp = skipwhite(cp);
@@ -1294,14 +1807,20 @@ do_mcalled_macro:
                     }
 
                 case P_RAD50:
-                    if (DOT & 1) {
-                        report(stack->top, ".RAD50 on odd boundary\n");
-                        DOT++;         /* Fix it */
-                    }
+
+                    /* TODO: .RAD50 (eol)     ;*A error - and handled correctly here
+                     *       .RAD50 //        ;   Okay  - and handled correctly here
+                     *       .RAD50 /X/ /Y/   ;   Okay  - and handled correctly here
+                     *       .RAD50 xABCx     ;*A error
+                     *       .RAD50 /abc      ;*A no (or mismatched) terminator
+                     *       .RAD50 /abc+ef/  ;*A error - and handled correctly here
+                     *       .RAD50 /ABC/DEF  ;*A Junk at EOL
+                     *       Only discard the old ident if the new one is valid */
+
                     {
                         int i, count;
                         unsigned *rad50;
-
+                        
                         /* Now assemble the argument */
                         rad50 = assemble_rad50 (cp, 0, &count, stack);
                         for (i = 0; i < count; i++) {
@@ -1312,11 +1831,15 @@ do_mcalled_macro:
                     return 1;
 
                 case P_PACKED:
-#define PACKED_POSITIVE 0x0C
-#define PACKED_NEGATIVE 0x0D
-#define PACKED_UNSIGNED 0x0F
+#define PACKED_POSITIVE 0x0C  /* 1100(2) */
+#define PACKED_NEGATIVE 0x0D  /* 1101(2) */
+#define PACKED_UNSIGNED 0x0F  /* 1111(2) */
                     {
                         int sign;       /* The sign comes at the end */
+                        int ndigits,
+                             nybbles,
+                             byte;
+                        char *tmp;
 
                         cp = skipwhite(cp);
 
@@ -1331,22 +1854,22 @@ do_mcalled_macro:
                         }
 
                         /* Count number of digits */
-                        int ndigits = 0;
-                        for (char *tmp = cp;
+                        ndigits = 0;
+                        for (tmp = cp;
                                 isdigit((unsigned char )*tmp);
                                 tmp++) {
                             ndigits++;
                         }
 
                         if (ndigits > 31) {
-                            report(stack->top, "Too many packed decimal digits\n");
-                            return 1;
+                            report_err(stack->top, "Too many packed decimal digits\n");
+                            return 0;
                         }
 
                         /* If the number of digits is even,
                          * prefix an imaginary zero. */
-                        int nybbles = !(ndigits % 2);
-                        int byte = 0;
+                        nybbles = !(ndigits % 2);
+                        byte = 0;
 
                         while (isdigit((unsigned char)*cp)) {
                             int value = *cp - '0';
@@ -1371,7 +1894,7 @@ do_mcalled_macro:
                             label = get_symbol(cp, &cp, &islocal);
 
                             if (label == NULL) {
-                                report(stack->top, "Bad .PACKED syntax (symbol expected)\n");
+                                report_err(stack->top, "Bad .PACKED syntax (symbol expected)\n");
                                 return 0;
                             }
 
@@ -1384,7 +1907,7 @@ do_mcalled_macro:
                     return CHECK_EOL;
 
                 default:
-                    report(stack->top, "Unimplemented directive %s\n", op->label);
+                    report_err(stack->top, "Unimplemented directive %s\n", op->label);
                     return 0;
                 }                      /* end switch (PSEUDO operation) */
 
@@ -1392,8 +1915,8 @@ do_mcalled_macro:
                 {
                     /* The PC must always be even. */
                     if (DOT & 1) {
-                        report(stack->top, "Instruction on odd address\n");
-                        DOT++;         /* ...and fix it... */
+                        report_warn(stack->top, "Instruction on odd address [.EVEN implied]\n");
+                        DOT++;         /* And fix it */
                     }
 
                     switch (op->flags & OC_MASK) {
@@ -1403,40 +1926,51 @@ do_mcalled_macro:
                         return CHECK_EOL;
 
                     case OC_MARK:
-                        /* MARK, EMT, TRAP */  {
+                        /* MARK, EMT, TRAP, SPL */  /* TODO: XFC (?) */
+                        {
                             EX_TREE        *value;
 
                             cp = skipwhite(cp);
-                            if (EOL (*cp)) {
-                                /* Default argument is 0 */
-                                store_word (stack->top, tr, 2, op->value);
+                            if (*cp == '#') {
+                                if (STRICT)
+                                    report_warn(stack->top,
+                                                "Use of immediate mode (%s #n) is not strictly allowed\n",
+                                                op->label);
+                                cp = skipwhite(++cp);  /* Allow the hash, but don't require it */
                             }
-                            else {
-                                if (*cp == '#')
-                                    cp++;  /* Allow the hash, but
-                                              don't require it */
+
+                            if (EOL (*cp)) {
+                                if (STRICT && (op->value == I_MARK || op->value == I_SPL))
+                                    report_warn(stack->top, "%s requires an operand (assumed 0)\n", op->label);
+                                /* Default argument is 0 */
+                                store_word(stack->top, tr, 2, op->value);
+                            } else {
                                 value = parse_expr(cp, 0);
                                 cp = value->cp;
                                 if (value->type != EX_LIT) {
-                                    if (op->value == I_MARK) {
-                                        report(stack->top,
-                                               "Instruction requires simple literal operand\n");
+                                    if (op->value == I_MARK || op->value == I_SPL) {
+                                        report_err(stack->top,
+                                                   "%s requires a simple literal operand\n", op->label);
                                         store_word(stack->top, tr, 2, op->value);
-                                    }
-                                    else {
+                                    } else {
                                         /* EMT, TRAP: handle as two bytes */
-                                        store_value (stack, tr, 1, value);
-                                        store_word (stack->top, tr, 1, op->value >> 8);
+                                        store_value(stack, tr, 1, value);
+                                        store_word(stack->top, tr, 1, op->value >> 8);
                                     }
                                 } else {
-                                    unsigned v = value->data.lit;
-                                    unsigned int max = (op->value == I_MARK)? 077 : 0377;
+                                    if (op->value == I_MARK || op->value == I_SPL) {
+                                        unsigned        mask = (op->value == I_MARK) ? 077 /* MARK */ : 07 /* SPL */;
 
-                                    if (v > max) {
-                                        report(stack->top, "Literal operand too large (%d. > %d.)\n", value->data.lit, max);
-                                        v = max;
+                                        if (value->data.lit & ~mask)
+                                            report_warn(stack->top, "%s %d. is out of range [0:%d.]\n",
+                                                                    op->label, value->data.lit, mask);
+                                        store_word(stack->top, tr, 2, op->value | (value->data.lit & mask));
+                                    } else {  /* I_EMT || I_TRAP */
+                                        if((value->data.lit & 0x8000) ? value->data.lit < 0xff00 : value->data.lit > 0xff)
+                                            report_warn(stack->top, "%s ^O%o is out of range [-400:377]\n",
+                                                                    op->label, value->data.lit);
+                                        store_word(stack->top, tr, 2, op->value | (value->data.lit & 0377));
                                     }
-                                    store_word(stack->top, tr, 2, op->value | v);
                                 }
                                 free_tree(value);
                             }
@@ -1450,13 +1984,23 @@ do_mcalled_macro:
                             char           *error;
 
                             if (!get_mode(cp, &cp, &mode, &error)) {
-                                report(stack->top,
-                                       "Invalid addressing mode (%s)\n", error);
+                                report_err(stack->top,
+                                           "Invalid addressing mode (%s)\n", error);
                                 return 0;
                             }
 
-                            if (op->value == I_JMP && (mode.type & 070) == 0) {
-                                report(stack->top, "JMP Rn is impossible\n");
+                            if ((mode.type & 070) == MODE_REG &&
+                                (op->value == I_JMP || op->value == I_CALL ||
+                                 op->value == I_TSTSET || op->value == I_WRTLCK)) {
+                                if (!STRICTER)
+                                    report_warn(stack->top, "%s Rn is impossible\n", op->label);
+                                /* But encode it anyway... */
+                            }
+
+                            if ((mode.type & 070) == MODE_AUTO_INCR &&
+                                (op->value == I_JMP || op->value == I_CALL)) {
+                                if (!RELAXED)
+                                    report_warn(stack->top, "%s (Rn)+ is architecture dependent\n", op->label);
                                 /* But encode it anyway... */
                             }
 
@@ -1475,25 +2019,39 @@ do_mcalled_macro:
                             char           *error;
 
                             if (!get_mode(cp, &cp, &left, &error)) {
-                                report(stack->top,
-                                       "Invalid addressing mode (1st operand: %s)\n",
-                                       error);
+                                report_err(stack->top,
+                                           "Invalid addressing mode (1st operand: %s)\n",
+                                           error);
                                 return 0;
                             }
 
                             cp = skipwhite(cp);
                             if (*cp++ != ',') {
-                                report(stack->top, "Invalid syntax (comma expected)\n");
+                                report_err(stack->top, "Invalid syntax (comma expected)\n");
                                 free_addr_mode(&left);
                                 return 0;
                             }
 
                             if (!get_mode(cp, &cp, &right, &error)) {
-                                report(stack->top,
-                                       "Invalid addressing mode (2nd operand: %s)\n",
-                                       error);
+                                report_err(stack->top,
+                                           "Invalid addressing mode (2nd operand: %s)\n",
+                                           error);
                                 free_addr_mode(&left);
                                 return 0;
+                            }
+
+                            if ((left.type  & 070) == MODE_REG       &&
+                                (right.type & 070) >= MODE_AUTO_INCR &&
+                                (right.type & 070) <  MODE_OFFSET    &&
+                                (right.type & 007) == (left.type & 007)) {
+                                if (!RELAXED)
+                                    report_warn(stack->top,
+                                                "%s Rn,%s%s(Rn)%s is architecture dependent\n",
+                                                op->label,
+                                                ((right.type & 010) == 010) ? "@" : "",
+                                                ((right.type & 060) == 040) ? "-" : "",
+                                                ((right.type & 060) == 020) ? "+" : "");
+                                /* But encode it anyway... */
                             }
 
                             /* Build instruction word */
@@ -1527,9 +2085,9 @@ do_mcalled_macro:
 
                                 if (!express_sym_offset(value, &sym, &offset)
                                     || sym->section != current_pc->section) {
-                                    report(stack->top, "Bad branch target (%s)\n",
-                                            sym ? "not same section"
-                                                : "can't express offset");
+                                    report_err(stack->top, "Bad branch target (%s)\n",
+                                               sym ? "not same section"
+                                                   : "can't express offset");
                                     store_word(stack->top, tr, 2, op->value);
                                     free_tree(value);
                                     return 0;
@@ -1541,7 +2099,7 @@ do_mcalled_macro:
                                 offset -= DOT + 2;
                             } else {
                                 if (value->type != EX_LIT) {
-                                    report(stack->top, "Bad branch target (not literal; ABS section)\n");
+                                    report_err(stack->top, "Bad branch target (not literal; ABS section)\n");
                                     store_word(stack->top, tr, 2, op->value);
                                     free_tree(value);
                                     return 0;
@@ -1576,13 +2134,13 @@ do_mcalled_macro:
                             reg = get_register(value);
                             free_tree(value);
                             if (reg == NO_REG) {
-                                report(stack->top, "Invalid addressing mode (register expected)\n");
+                                report_err(stack->top, "Invalid addressing mode (register expected)\n");
                                 return 0;
                             }
 
                             cp = skipwhite(cp);
                             if (*cp++ != ',') {
-                                report(stack->top, "Invalid syntax (comma expected)\n");
+                                report_err(stack->top, "Invalid syntax (comma expected)\n");
                                 return 0;
                             }
 
@@ -1594,13 +2152,13 @@ do_mcalled_macro:
                                 SYMBOL         *sym;
 
                                 if (!express_sym_offset(value, &sym, &offset)) {
-                                    report(stack->top, "Bad branch target (can't express offset)\n");
+                                    report_err(stack->top, "Bad branch target (can't express offset)\n");
                                     free_tree(value);
                                     return 0;
                                 }
                                 /* Must be same section */
                                 if (sym->section != current_pc->section) {
-                                    report(stack->top, "Bad branch target (different section)\n");
+                                    report_err(stack->top, "Bad branch target (different section)\n");
                                     free_tree(value);
                                     offset = 0;
                                 } else {
@@ -1610,7 +2168,7 @@ do_mcalled_macro:
                                 }
                             } else {
                                 if (value->type != EX_LIT) {
-                                    report(stack->top, "Bad branch target (not a literal)\n");
+                                    report_err(stack->top, "Bad branch target (not a literal)\n");
                                     offset = 0;
                                 } else {
                                     offset = DOT + 2 - value->data.lit;
@@ -1637,15 +2195,15 @@ do_mcalled_macro:
                             char           *error;
 
                             if (!get_mode(cp, &cp, &mode, &error)) {
-                                report(stack->top,
-                                       "Invalid addressing mode (1st operand: %s)\n",
-                                       error);
+                                report_err(stack->top,
+                                           "Invalid addressing mode (1st operand: %s)\n",
+                                           error);
                                 return 0;
                             }
 
                             cp = skipwhite(cp);
                             if (*cp++ != ',') {
-                                report(stack->top, "Invalid syntax (comma expected)\n");
+                                report_err(stack->top, "Invalid syntax (comma expected)\n");
                                 free_addr_mode(&mode);
                                 return 0;
                             }
@@ -1654,7 +2212,7 @@ do_mcalled_macro:
 
                             reg = get_register(value);
                             if (reg == NO_REG) {
-                                report(stack->top, "Invalid addressing mode (2nd operand: register expected)\n");
+                                report_err(stack->top, "Invalid addressing mode (2nd operand: register expected)\n");
                                 free_tree(value);
                                 free_addr_mode(&mode);
                                 return 0;
@@ -1681,27 +2239,47 @@ do_mcalled_macro:
 
                             reg = get_register(value);
                             if (reg == NO_REG) {
-                                report(stack->top, "Invalid addressing mode (1st operand: register exected)\n");
+                                report_err(stack->top, "Invalid addressing mode (1st operand: register exected)\n");
                                 free_tree(value);
                                 return 0;
                             }
 
                             cp = skipwhite(cp);
                             if (*cp++ != ',') {
-                                report(stack->top, "Invalid syntax (comma expected)\n");
+                                report_err(stack->top, "Invalid syntax (comma expected)\n");
                                 return 0;
                             }
 
                             if (!get_mode(cp, &cp, &mode, &error)) {
-                                report(stack->top,
-                                       "Invalid addressing mode (2nd operand: %s)\n",
-                                       error);
+                                report_err(stack->top,
+                                           "Invalid addressing mode (2nd operand: %s)\n",
+                                           error);
                                 free_tree(value);
                                 return 0;
                             }
 
                             if (op->value == I_JSR && (mode.type & 070) == 0) {
-                                report(stack->top, "JSR Rn,Rm is impossible\n");
+                                if (!STRICTER)
+                                    report_warn(stack->top, "JSR Rn,Rm is impossible\n");
+                                /* But encode it anyway... */
+                            }
+
+                            if (op->value == I_JSR && (mode.type & 070) == MODE_AUTO_INCR) {
+                                if (!RELAXED)
+                                    report_warn(stack->top, "JSR Rn,(Rm)+ is architecture dependent\n");
+                                /* But encode it anyway... */
+                            }
+
+                            if (op->value == I_XOR && (mode.type & 070) >= MODE_AUTO_INCR &&
+                                                      (mode.type & 070) <  MODE_OFFSET    &&
+                                                      (mode.type & 007) == reg) {
+                                if (!RELAXED)
+                                    report_warn(stack->top,
+                                                "%s Rn,%s%s(Rn)%s is architecture dependent\n",
+                                                op->label,
+                                                ((mode.type & 010) == 010) ? "@" : "",
+                                                ((mode.type & 060) == 040) ? "-" : "",
+                                                ((mode.type & 060) == 020) ? "+" : "");
                                 /* But encode it anyway... */
                             }
 
@@ -1713,7 +2291,7 @@ do_mcalled_macro:
                         return CHECK_EOL;
 
                     case OC_1REG:
-                        /* One register (RTS,FADD,FSUB,FMUL,FDIV,SPL) */  {
+                        /* One register (RTS, FADD, FSUB, FMUL, FDIV) */  {
                             EX_TREE        *value;
                             unsigned        reg;
 
@@ -1721,7 +2299,7 @@ do_mcalled_macro:
                             cp = value->cp;
                             reg = get_register(value);
                             if (reg == NO_REG) {
-                                report(stack->top, "Invalid addressing mode (register expected)\n");
+                                report_err(stack->top, "Invalid addressing mode (register expected)\n");
                                 reg = 0;
                             }
 
@@ -1743,7 +2321,7 @@ do_mcalled_macro:
                             unsigned        word;
 
                             if (!get_fp_src_mode(cp, &cp, &mode)) {
-                                report(stack->top, "Invalid addressing mode\n");
+                                report_err(stack->top, "Invalid addressing mode\n");
                                 return 0;
                             }
 
@@ -1766,23 +2344,23 @@ do_mcalled_macro:
 
                             if ((op->flags & OC_MASK) == OC_FPP_FSRCAC) {
                                 if (!get_fp_src_mode(cp, &cp, &mode, &error)) {
-                                    report(stack->top,
-                                           "Invalid addressing mode (1st operand, fsrc: %s)\n",
-                                           error);
+                                    report_err(stack->top,
+                                               "Invalid addressing mode (1st operand, fsrc: %s)\n",
+                                               error);
                                     return 0;
                                 }
                             } else {
                                 if (!get_mode(cp, &cp, &mode, &error)) {
-                                    report(stack->top,
-                                           "Invalid addressing mode (1st operand: %s)\n",
-                                           error);
+                                    report_err(stack->top,
+                                               "Invalid addressing mode (1st operand: %s)\n",
+                                               error);
                                     return 0;
                                 }
                             }
 
                             cp = skipwhite(cp);
                             if (*cp++ != ',') {
-                                report(stack->top, "Invalid syntax (comma expected)\n");
+                                report_err(stack->top, "Invalid syntax (comma expected)\n");
                                 free_addr_mode(&mode);
                                 return 0;
                             }
@@ -1792,7 +2370,7 @@ do_mcalled_macro:
 
                             reg = get_register(value);
                             if (reg == NO_REG || reg > 3) {
-                                report(stack->top, "Invalid destination fp register\n");
+                                report_err(stack->top, "Invalid destination fp register\n");
                                 reg = 0;
                             }
 
@@ -1821,21 +2399,21 @@ do_mcalled_macro:
 
                             reg = get_register(value);
                             if (reg == NO_REG || reg > 3) {
-                                report(stack->top, "Invalid source fp register\n");
+                                report_err(stack->top, "Invalid source fp register\n");
                                 reg = 0;
                             }
 
                             cp = skipwhite(cp);
                             if (*cp++ != ',') {
-                                report(stack->top, "Invalid syntax (comma expected)\n");
+                                report_err(stack->top, "Invalid syntax (comma expected)\n");
                                 free_tree(value);
                                 return 0;
                             }
 
                             if (!get_mode(cp, &cp, &mode, &error)) {
-                                report(stack->top,
-                                       "Invalid addressing mode (2nd operand: %s)\n",
-                                       error);
+                                report_err(stack->top,
+                                           "Invalid addressing mode (2nd operand: %s)\n",
+                                           error);
                                 free_tree(value);
                                 return 0;
                             }
@@ -1873,20 +2451,25 @@ do_mcalled_macro:
                             nwords = 4;
                     cis_common:
                             if (!EOL(*cp)) {
-                                for (int i = 0; i < nwords; i++) {
+                                int i;
+
+                                for (i = 0; i < nwords; i++) {
                                     if (i > 0) {
                                         cp = skipwhite(cp);
                                         if (*cp++ != ',') {
-                                            report(stack->top, "Invalid syntax (operand %d: comma expected)\n", i+1);
+                                            report_err(stack->top, "Invalid syntax (operand %d: comma expected)\n", i+1);
                                             cp--;
                                         }
                                     }
+                                    { /**/
                                     EX_TREE *ex = parse_expr(cp, 0);
+
                                     if (!expr_ok(ex)) {
-                                        report(stack->top, "Invalid expression (operand %d)\n", i+1);
+                                        report_err(stack->top, "Invalid expression (operand %d)\n", i+1);
                                     }
                                     cp = ex->cp;
                                     expr[i] = ex;
+                                    } /**/
                                 }
                             } else {
                                 expr[0] = NULL;
@@ -1895,7 +2478,9 @@ do_mcalled_macro:
                             store_word(stack->top, tr, 2, op->value);
 
                             if (expr[0]) {
-                                for (int i = 0; i < nwords; i++) {
+                                int i;
+
+                                for (i = 0; i < nwords; i++) {
                                     store_value(stack, tr, 2, expr[i]);
                                 }
                             }
@@ -1903,7 +2488,7 @@ do_mcalled_macro:
                         return CHECK_EOL;
 
                     default:
-                        report(stack->top, "Unimplemented instruction format\n");
+                        report_err(stack->top, "Unimplemented instruction format\n");
                         return 0;
                     }                  /* end(handle an instruction) */
                 }
@@ -1921,7 +2506,7 @@ do_mcalled_macro:
             }
         }
     }
-
+        
     /* Only thing left is an implied .WORD directive */
     /*JH: fall through in case of illegal opcode, illegal label! */
     free(label);

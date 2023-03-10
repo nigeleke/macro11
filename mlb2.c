@@ -52,7 +52,7 @@ static MLB     *mlb_open_fmt(
     MLB *mlb = NULL;
     int i;
 
-    for (i = 0; (vtbl = mlb_vtbls[i]); i++) {
+    for (i = 0; (vtbl = mlb_vtbls[i]),vtbl; i++) {
         if (vtbl->mlb_is_rt11 == object_format) {
             mlb = vtbl->mlb_open(name, allow_object_library);
             if (mlb != NULL) {

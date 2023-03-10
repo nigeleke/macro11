@@ -44,7 +44,8 @@ char           *skipdelim_comma(
     int  *comma)
 {
     cp = skipwhite(cp);
-    if ((*comma = (*cp == ','))) {
+    *comma = (*cp == ',');
+    if (*comma) {
         cp = skipwhite(cp + 1);
     }
     return cp;
@@ -64,7 +65,8 @@ int check_eol(
         return 1;
     }
 
-    report(stack->top, "Junk at end of line ('%.20s')\n", cp);
+    report_err(stack->top, "Junk at end of line ('%.*s')\n",
+           (strlen(cp) > 20) ? 20 : strlen(cp)-1, cp);
 
     return 0;
 }
@@ -101,10 +103,12 @@ char           *getstring(
  * .include /name/ ?name? \name\ "name"
  * but not
  * .include ^/name/ <name> name =name= :name:
- * .include :name: seems to be silently ignored.
+ * .include :name: seems to be silently ignored ... but ...
+ * .include :name: is equivalent to creating two labels (.INCLUDE: NAME:)
  *
- * This should probably follow the exact same rules as .ASCII
+ * This should probably follow the similar rules to .ASCII
  * although that is not mentioned in the manual,
+ * and MACRO-11 V05.05 does not support it.
  */
 char           *getstring_fn(
     char *cp,
@@ -114,29 +118,31 @@ char           *getstring_fn(
     int             len;
     char           *str;
 
-    switch (*cp) {
-    case '<':
-    case ':':
+    if (*cp == '<')    /* MACRO-11 V05.05 exits with a ".INCLUDE directive file error" */
         return NULL;
-    }
 
-    if (!ispunct((unsigned char)*cp)) {
-        return NULL;
-    }
+    if (STRICT)  /* Disallow alpha-numeric quote characters */
+        if (!ispunct((unsigned char)*cp))
+            return NULL;
 
-    endstr[0] = *cp;
-    endstr[1] = '\n';
-    endstr[2] = '\0';
+    endstr[0] = (char) toupper((unsigned char) *cp);  /* MACRO-11 treats upper- and ...  */
+    endstr[1] = (char) tolower((unsigned char) *cp);  /* ... lower-case alike (see .REM) */
+    endstr[2] = '\n';
+    endstr[3] = '\0';
     cp++;
 
     len = strcspn(cp, endstr);
+
+    if (STRICT)  /* Disallow empty file name and mismatched quote characters */
+        if (len == 0 || cp[len] == '\n' || cp[len] == '\0')
+            return NULL;
 
     if (endp)
         *endp = cp + len + 1;
 
     str = memcheck(malloc(len + 1));
     memcpy(str, cp, len);
-    str[len] = 0;
+    str[len] = '\0';
 
     return str;
 }
@@ -213,13 +219,16 @@ int get_mode(
         mode->offset = parse_expr(cp, 0);
         if (endp)
             *endp = mode->offset->cp;
+        { /**/
         int ok = expr_ok(mode->offset);
+
         if (!ok) {
             *error = "Invalid expression after '#'";
             free_tree(mode->offset);
             mode->offset = NULL;
         }
         return ok;
+        } /**/
     }
 
     /* Check for -(Rn) */
@@ -384,17 +393,12 @@ int get_fp_src_mode(
     ADDR_MODE *mode,
     char **error)
 {
-    cp = skipwhite(cp);
-
-    char *savecp = cp;
+    char *savecp = (cp = skipwhite(cp));
 
     if (cp[0] == '#') {
         unsigned flt[1];
         char *fltendp = NULL;
-
-        cp = skipwhite(cp + 1);
-
-        int ret = parse_float(cp, &fltendp, 1, flt);
+        int ret = parse_float((cp = skipwhite(cp + 1)), &fltendp, 1, flt);
 
         if (ret) {
             mode->type = MODE_AUTO_INCR | MODE_PC;
@@ -411,9 +415,11 @@ int get_fp_src_mode(
         }
     }
 
+    { /**/
     int ret = get_mode(savecp, endp, mode, error);
 
     return ret;
+    } /**/
 }
 
 #define DEBUG_FLOAT     0
@@ -421,12 +427,14 @@ int get_fp_src_mode(
 void
 printflt(unsigned *flt, int size)
 {
+    int i;
+
     printf("%06o: ",        flt[0]);
     printf("sign:  %d ",   (flt[0] & 0x8000) >> 15);
     printf("uexp:  %x ",   (flt[0] & 0x7F80) >>  7);
     printf("ufrac: %02x",   flt[0] & 0x007F);
 
-    for (int i = 1; i < size; i++) {
+    for (i = 1; i < size; i++) {
         printf(" %04x", flt[i]);
     }
 
@@ -710,10 +718,12 @@ int parse_float(
 
     if (toupper((unsigned char)*cp) == 'E') {
         cp++;
+        { /**/
         int exp = strtol(cp, &cp, 10);
 
         float_dec_exponent += exp;
         DF("E%d -> dec_exp %d\n", exp, float_dec_exponent);
+        } /**/
     }
 
     if (endp)
@@ -759,6 +769,7 @@ int parse_float(
             float_buf >>= 1;
 
 #if PARSE_FLOAT_DIVIDE_BY_MULT_LOOP
+            { /**/
             uint64_t float_save = float_buf;
             DUMP3;
             DF("float_save: %016llx\n", float_save);
@@ -800,9 +811,12 @@ int parse_float(
                 float_buf += float_save;
                 DF("Loop i=%2d: ", i); DUMP3;
             }
+            } /**/
 #else
+            { /**/
             int round = float_buf % 5;
             float_buf = float_buf / 5 * 8;
+
             /*
              * Try to fill in some of the lesser significant bits.
              * This is not always bitwise identical to the original method
@@ -811,6 +825,7 @@ int parse_float(
             if (round) {
                 float_buf += round * 8 / 5;
             }
+            } /**/
 #endif
 
             /* It's not simply dividing by 5, it also multiplies by 8,
@@ -822,7 +837,9 @@ int parse_float(
 
         /* Normalize the mantissa: shift a single 1 out to the left */
         DF("Normalize the mantissa: shift a single 1 out to the left\n");
+        { /**/
         int carry;
+
         do {
             /* FLTG5 */
             float_bin_exponent--;
@@ -830,6 +847,7 @@ int parse_float(
             float_buf <<= 1;
             DUMP3;
         } while (carry == 0);
+        } /**/
 
         /* Set excess 128. */
         DF("Set excess 128.\n");
@@ -838,13 +856,15 @@ int parse_float(
 
         if (float_bin_exponent & 0xFF00) {
             /* Error N. Underflow. 2$ */
-            report(NULL, "Error N (underflow)\n");
+            report_err(NULL, "Error N (underflow)\n");
             return 0;
         }
 
         /* Shift right 9 positions to make room for sign and exponent 3$ */
         DF("Shift right 9 positions to make room for sign and exponent\n");
+        { /**/
         int round = (float_buf >> 8) & 0x0001;
+
         float_buf >>= 9;
         float_buf |= (uint64_t)float_bin_exponent << (64-9);
         DUMP3;
@@ -870,7 +890,7 @@ int parse_float(
         DF("round: size = 4, round = %d\n", round);
 
         /* Round (there is a truncation option to omit this step) */
-        if (1) {
+        /* if (1) */ {
             uint64_t onehalf;
 
             if (size < 4) {
@@ -897,13 +917,14 @@ int parse_float(
 
         if (float_buf & 0x8000000000000000ULL) {
             // 6$ error T: exponent overflow
-            report(NULL, "error T: exponent overflow\n");
+            report_err(NULL, "error T: exponent overflow\n");
             return 0;
         }
 
         /* 7$ */
         float_buf |= (uint64_t)float_sign << 63;
         DF("Put in float_sign: "); DUMP3;
+        } /**/
     }
 
     /* Now put together the result from the parts */
@@ -1012,7 +1033,7 @@ EX_TREE        *parse_binary(
             break;
 
         case '_':
-            if (symbol_allow_underscores || depth >= LSH_PREC)
+            if (STRICTEST || symbol_allow_underscores || depth >= LSH_PREC)
                 return leftp;
 
             rightp = parse_binary(cp + 1, term, LSH_PREC);
@@ -1027,7 +1048,7 @@ EX_TREE        *parse_binary(
         }                              /* end switch */
     }                                  /* end while */
 
-    /* Can't be reached except by error. */
+    /* Can't be reached except by detected error. */
     return leftp;
 }
 
@@ -1066,8 +1087,13 @@ char           *get_symbol(
     len = (int) (symcp - cp);
 
     /* Now limit length */
-    if (len > symbol_len)
-        len = symbol_len;
+    if (start_digit) {
+        if (len > SYMMAX_MAX)
+            len = SYMMAX_MAX;
+    } else {
+        if (len > symbol_len)
+            len = symbol_len;
+    }
 
     symcp = memcheck(malloc(len + 1));
 
@@ -1082,8 +1108,18 @@ char           *get_symbol(
         if (start_digit) {
             if (not_digits == 1 && symcp[len - 1] == '$') {
                 char           *newsym = memcheck(malloc(32));  /* Overkill */
+                long            symnum = strtol(symcp, NULL, 10);
 
-                sprintf(newsym, "%ld$%d", strtol(symcp, NULL, 10), lsb);
+                if (symnum <= 0 || symnum > MAX_LOCSYM) {
+                    if (STRICT || symnum < 0 || symnum > BAD_LOCSYM) {
+                        report_err(NULL, "Local symbol '%s' is out of range\n", symcp);
+                        if (symnum < 0 || symnum > BAD_LOCSYM)
+                            symnum = BAD_LOCSYM;  /* This may cause duplicates etc. */
+                    }
+                    /* 0$ and > MAX_LOCSYM$ will be used unchanged else BAD_LOCSYM$ */
+                }
+
+                sprintf(newsym, "%ld$%d", symnum, lsb);
                 if (enabl_debug && lstfile) {
                     fprintf(lstfile, "lsb %d: %s -> %s\n",
                             lsb, symcp, newsym);
@@ -1247,9 +1283,11 @@ EX_TREE        *parse_unary(
                 unsigned        value;
 
                 cp += 2; /* bracketed range is an extension */
-                if (brackrange(cp, &start, &len, &endcp))
-                    value = rad50(cp + start, NULL);
-                else {
+                if (brackrange(cp, &start, &len, &endcp)) {
+                   value = rad50(cp + start, NULL);
+                    if (STRICTER)
+                        report_warn(NULL, "^R<...> is an extension to MACRO-11\n");
+                 } else {
                     value = rad50(cp, &endcp);
                     /* It turns out that ^R allows extra characters;
                      * it will stop consuming input at the first
@@ -1276,7 +1314,7 @@ EX_TREE        *parse_unary(
             }
         case 'p':
             /* psect limits, low or high */ {
-                char bound = tolower((unsigned char)cp[2]);
+                char bound = (char) tolower((unsigned char)cp[2]);
                 char *cp2 = skipwhite(cp + 3);
                 int islocal = 0;
                 char *endcp = NULL;
@@ -1297,28 +1335,23 @@ EX_TREE        *parse_unary(
                         tp = new_ex_bin(EX_ADD, tp, rightp);
                     } else {
                         tp = ex_err(tp, endcp);
-                        /* report(stack->top, "^p: %c not recognized\n", bound); */
+                        /* report_err(stack->top, "^p: %c not recognized\n", bound); */
                     }
                 } else {
-                    /* report(stack->top, "psect name %s not found\n", psectname); */
+                    /* report_err(stack->top, "psect name %s not found\n", psectname); */
                     if (!endcp) {
                         endcp = cp;
                     }
-                    if (pass == 0) {
-                        /*
-                         * During the first pass it is expected that the psect is not
-                         * found. Return a dummy value of the expected size, so that
-                         * the size of the psect keeps in sync.
-                         */
-                        tp = new_ex_lit(0);
-                    } else {
-                        tp = ex_err(new_ex_lit(0), endcp);
-                    }
+                    /* During the first pass it is allowed that the psect is not found. */
+                    tp = ex_err(new_ex_lit(0), endcp);
                 }
                 free(psectname);
-                tp->cp = endcp;
-                cp = endcp;
 
+                if (STRICTEST && tp->type != EX_ERR)
+                    return ex_err(tp, endcp);
+
+                tp->cp = endcp;
+            /*  cp = endcp;  // TODO: Not needed  */
                 return tp;
             }
         }
@@ -1356,16 +1389,26 @@ EX_TREE        *parse_unary(
     if (*cp == '\'') {
         /* 'x single ASCII character */
         cp++;
-        tp = new_ex_lit(*cp & 0xff);
-        tp->cp = ++cp;
+        if (*cp == '\n') {
+           tp = ex_err(new_ex_lit(0), cp);
+        } else {
+            tp = new_ex_lit(*cp & 0xff);
+            tp->cp = ++cp;
+        }
         return tp;
     }
 
     if (*cp == '\"') {
         /* "xx ASCII character pair */
         cp++;
-        tp = new_ex_lit((cp[0] & 0xff) | ((cp[1] & 0xff) << 8));
-        tp->cp = cp + 2;
+        if (cp[0] == '\n')
+            tp = ex_err(new_ex_lit(0), cp);
+        else if (cp[1] == '\n')
+            tp = ex_err(new_ex_lit(cp[0] & 0xff), cp + 1);
+        else {
+            tp = new_ex_lit((cp[0] & 0xff) | ((cp[1] & 0xff) << 8));
+            tp->cp = cp + 2;
+        }
         return tp;
     }
 
@@ -1392,9 +1435,12 @@ EX_TREE        *parse_unary(
             if (*endcp == '.')
                 endcp++;
 
-            tp = new_ex_lit(value);
-            tp->cp = endcp;
-
+            if (STRICTEST && value > 0xffff) {
+                tp = ex_err(new_ex_lit(value /* & 0xffff */), endcp);
+            } else {
+                tp = new_ex_lit(value);
+                tp->cp = endcp;
+            }
             return tp;
         }
 
@@ -1410,7 +1456,8 @@ EX_TREE        *parse_unary(
         /* Optimization opportunity: I don't really need to call
            get_symbol a second time. */
 
-        if (!(label = get_symbol(cp, &cp, &local))) {
+        label = get_symbol(cp, &cp, &local);
+        if (!label) {
             tp = ex_err(NULL, cp);     /* Not a valid label. */
             return tp;
         }
