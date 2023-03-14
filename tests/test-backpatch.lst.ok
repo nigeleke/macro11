@@ -5,7 +5,7 @@
        5 000000                                 .psect  modinf  ,ro,d,lcl,rel,con
        6                                
        7        000000                  label = .
-       8        000000                          .blkb   50              ; create some data
+       8 000000                                 .blkb   50              ; create some data
        9                                
       10 000050    050     051     052          .byte   50,51,52        ; and some more
       11                                        .save                   ; we're at 53 now

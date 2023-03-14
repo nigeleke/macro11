@@ -289,8 +289,7 @@
      289 000652 177535                          ldcdf   @(r5)+,ac1
      290 000654 177535                          ldcfd   @(r5)+,ac1      ; same opcode
      291                                
-     292                                        .end
-     292                                
+     292        000001                          .end
 
 
 Symbol table

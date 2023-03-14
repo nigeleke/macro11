@@ -58,11 +58,10 @@ test-packed.mac:38: ***ERROR Too many packed decimal digits
 test-packed.mac:48->NAME:1: ***ERROR Redefining permanent symbol 'LAB'
        1        000000                          .narg   lab             ; redefinition
 test-packed.mac:48->NAME:2: ***ERROR Redefining permanent symbol 'LAB'
-       2                                        .nchr   lab,//          ; redefinition
+       2        000002                          .nchr   lab,//          ; redefinition
 test-packed.mac:48->NAME:3: ***ERROR Redefining permanent symbol 'LAB'
-       3                                        .ntype  lab,#3          ; redefinition
-      49                                        .end
-      49                                
+       3        000027                          .ntype  lab,#3          ; redefinition
+      49        000001                          .end
 
 
 Symbol table

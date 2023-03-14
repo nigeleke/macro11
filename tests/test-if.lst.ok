@@ -134,19 +134,19 @@
      134                                	.endc
      135                                
      136                                	; errors
-test-if.mac:137: ***ERROR Missing .(I)IF condition
+test-if.mac:137: ***ERROR Directive '.IIF' requires arguments
      137                                	.iif
-test-if.mac:138: ***ERROR Missing .(I)IF condition
+test-if.mac:138: ***ERROR Missing .IIF condition
      138                                	.iif 0
-test-if.mac:139: ***ERROR Missing .(I)IF condition
+test-if.mac:139: ***ERROR Missing .IIF condition
      139                                	.iif 1
-test-if.mac:140: ***ERROR Bad .IF expression
+test-if.mac:140: ***ERROR Bad .IIF expression
      140        000000                  	.iif undefd
-test-if.mac:141: ***ERROR Bad .IF expression
+test-if.mac:141: ***ERROR Bad .IIF expression
      141        000000                  	.iif zero
-test-if.mac:142: ***ERROR Bad .IF expression
+test-if.mac:142: ***ERROR Bad .IIF expression
      142        000000                  	.iif one
-test-if.mac:143: ***ERROR Bad .IF expression
+test-if.mac:143: ***ERROR Bad .IIF expression
      143        000000                  	.iif z
      143                                
 

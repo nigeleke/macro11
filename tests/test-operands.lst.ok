@@ -10,9 +10,9 @@
       10 000000 006400                          mark    0
       11 000002 006401                          mark    1
       12 000004 006477                          mark    77
-test-operands.mac:13: ***ERROR Literal operand too large (64. > 63.)
-      13 000006 006477                          mark    100             ; too large
-test-operands.mac:14: ***ERROR Instruction requires simple literal operand
+test-operands.mac:13: ***ERROR MARK 64. is out of range [0:63.]
+      13 000006 006400                          mark    100             ; too large
+test-operands.mac:14: ***ERROR MARK requires a simple literal operand
       14 000010 006400                          mark    .               ; must be literal
 test-operands.mac:15: ***ERROR Junk at end of line (',0             ; bad')
       15 000012 006400                          mark    0,0             ; bad
@@ -20,26 +20,25 @@ test-operands.mac:15: ***ERROR Junk at end of line (',0             ; bad')
       17 000014 104000                          emt     0
       18 000016 104001                          emt     1
       19 000020 104377                          emt     255.
-test-operands.mac:20: ***ERROR Literal operand too large (256. > 255.)
-      20 000022 104377                          emt     256.            ; too large
+test-operands.mac:20: ***ERROR EMT ^O400 is out of range [-400:377]
+      20 000022 104000                          emt     256.            ; too large
       21 000024    024'    210                  emt     .               ; allowed though strange
       22                                
       23 000026 104400                          trap    0
       24 000030 104401                          trap    1
       25 000032 104777                          trap    255.
-test-operands.mac:26: ***ERROR Literal operand too large (256. > 255.)
-      26 000034 104777                          trap    256.            ; too large
+test-operands.mac:26: ***ERROR TRAP ^O400 is out of range [-400:377]
+      26 000034 104400                          trap    256.            ; too large
       27 000036    036'    211                  trap    .               ; allowed though strange
       28                                
       29                                ; OC_1GEN
       30                                
       31 000040 005700                          tst     r0
-test-operands.mac:32: ***ERROR Junk at end of line (',(r0)         ; bad
-')
+test-operands.mac:32: ***ERROR Junk at end of line (',(r0)         ; bad')
       32 000042 005700                          tst     r0,(r0)         ; bad
 test-operands.mac:33: ***ERROR Invalid addressing mode (Invalid expression)
       33                                        tst     @               ; bad
-**:0: ***ERROR Register expression out of range.
+**:0: ***ERROR Register expression out of range
 test-operands.mac:34: ***ERROR Invalid addressing mode (Invalid expression)
       34                                        tst     %77             ; bad
 test-operands.mac:35: ***ERROR Invalid addressing mode (Invalid expression)
@@ -48,8 +47,7 @@ test-operands.mac:35: ***ERROR Invalid addressing mode (Invalid expression)
       37                                ; OC_2GEN
       38                                
       39 000044 060001                          add     r0,r1
-test-operands.mac:40: ***ERROR Junk at end of line (',r2        ; bad
-')
+test-operands.mac:40: ***ERROR Junk at end of line (',r2        ; bad')
       40 000046 060001                          add     r0,r1,r2        ; bad
 test-operands.mac:41: ***ERROR Invalid addressing mode (1st operand: Invalid expression)
       41                                        add     @               ; bad
@@ -77,8 +75,7 @@ test-operands.mac:55: ***ERROR Bad branch target (odd address)
       58                                
       59 000064 077001                          sob     r0,.
       60 000066 077001                          sob     0,.             ; yes MACRO11 accepts this
-test-operands.mac:61: ***ERROR Junk at end of line (',3          ; bad
-')
+test-operands.mac:61: ***ERROR Junk at end of line (',3          ; bad')
       61 000070 077001                          sob     r0,.,3          ; bad
 test-operands.mac:62: ***ERROR Invalid addressing mode (register expected)
       62                                        sob                     ; bad
@@ -93,8 +90,7 @@ test-operands.mac:65: ***ERROR Invalid addressing mode (register expected)
       68                                
       69 000072 072027  000003                  ash     #3,r0
       70 000076 072027  000003                  ash     #3,0            ; yes MACRO11 accepts this
-test-operands.mac:71: ***ERROR Junk at end of line (',r1        ; bad
-')
+test-operands.mac:71: ***ERROR Junk at end of line (',r1        ; bad')
       71 000102 072027  000003                  ash     #3,r0,r1        ; bad
 test-operands.mac:72: ***ERROR Invalid addressing mode (1st operand: Invalid expression)
       72                                        ash                     ; bad
@@ -114,8 +110,7 @@ test-operands.mac:75: ***ERROR Invalid addressing mode (2nd operand: register ex
       83                                
       84 000106 171111                          mulf    (r1),ac1
       85 000110 171111                          mulf    (r1),1
-test-operands.mac:86: ***ERROR Junk at end of line (',ac1    ; bad
-')
+test-operands.mac:86: ***ERROR Junk at end of line (',ac1    ; bad')
       86 000112 171111                          mulf    (r1),ac1,ac1    ; bad
 test-operands.mac:87: ***ERROR Invalid addressing mode (1st operand, fsrc: Invalid expression)
       87                                        mulf                    ; bad
@@ -146,8 +141,7 @@ test-operands.mac:100: ***ERROR Invalid source fp register
      103                                
      104 000124 076152                          cmpni
      105 000126 076152  000001  000002          cmpni   1,2
-test-operands.mac:106: ***ERROR Junk at end of line (',3           ; bad
-')
+test-operands.mac:106: ***ERROR Junk at end of line (',3           ; bad')
      106 000134 076152  000001  000002          cmpni   1,2,3           ; bad
 test-operands.mac:107: ***ERROR Invalid syntax (operand 2: comma expected)
 test-operands.mac:107: ***ERROR Invalid expression (operand 2)
@@ -167,8 +161,7 @@ test-operands.mac:109: ***ERROR Invalid expression (complex relocation)
      114 000166 076150  000001  000002          addni   1,2,3
          000174 000003                  
      115 000176 076150  000001  000002          addni   1,2,3,4         ; bad
-test-operands.mac:115: ***ERROR Junk at end of line (',4         ; bad
-')
+test-operands.mac:115: ***ERROR Junk at end of line (',4         ; bad')
          000204 000003                  
 test-operands.mac:116: ***ERROR Invalid syntax (operand 2: comma expected)
 test-operands.mac:116: ***ERROR Invalid expression (operand 2)
@@ -202,8 +195,7 @@ test-operands.mac:119: ***ERROR Invalid expression (complex relocation)
      124 000250 076132  000001  000002          movtci  1,2,3,4
          000256 000003  000004          
      125 000262 076132  000001  000002          movtci  1,2,3,4,5
-test-operands.mac:125: ***ERROR Junk at end of line (',5
-')
+test-operands.mac:125: ***ERROR Junk at end of line (',5')
          000270 000003  000004          
 test-operands.mac:126: ***ERROR Invalid syntax (operand 2: comma expected)
 test-operands.mac:126: ***ERROR Invalid expression (operand 2)
@@ -245,8 +237,7 @@ test-operands.mac:130: ***ERROR Invalid expression (complex relocation)
 test-operands.mac:130: ***ERROR Invalid expression (complex relocation)
          000352 000000  000000          
      131                                
-     132                                        .end
-     132                                
+     132        000001                          .end
 
 
 Symbol table

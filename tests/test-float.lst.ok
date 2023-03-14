@@ -282,8 +282,7 @@ test-float.mac:186: ***ERROR Junk at end of line ('5        ; bad: junk')
      210 001304 173027  040200                  subd    #1,ac0          ; float
      211 001310 173027  040200                  subf    #1,ac0          ; float
      212                                
-     213                                        .end
-     213                                
+     213        000001                          .end
 
 
 Symbol table
