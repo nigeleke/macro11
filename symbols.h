@@ -1,4 +1,3 @@
-
 #ifndef SYMBOLS__H
 #define SYMBOLS__H
 
@@ -366,7 +365,7 @@ typedef struct symbol_iter {
 extern int      symbol_len;                /* max. len of symbols. default = 6 */
 extern int      symbol_allow_underscores;  /* allow "_" in symbol names */
 
-extern SYMBOL  *reg_sym[8];     /* Keep the register symbols in a handy array */
+extern SYMBOL  *reg_sym[9];     /* Keep the register symbols in a handy array */
 
 extern SYMBOL_TABLE system_st;  /* System symbols (Instructions, pseudo-ops, registers) */
 
@@ -381,6 +380,9 @@ extern SYMBOL_TABLE implicit_st;   /* The symbols which may be implicit globals 
 extern SYMBOL_TABLE undefined_st;  /* The symbols which may be undefined */
 
 #endif
+
+#define REG_ERR reg_sym[8]         /* Handy reference to the '%E' [error] register */
+#define REG_ERR_VALUE 0177700      /* Chosen so binary generated is 'obviously' wrong */
 
 int             hash_name(
     char *label);
@@ -397,6 +399,7 @@ SYMBOL         *add_sym(
     SECTION *section,
     SYMBOL_TABLE *table,
     struct stream *stream);
+
 SYMBOL         *first_sym(
     SYMBOL_TABLE *table,
     SYMBOL_ITER *iter);
@@ -404,9 +407,11 @@ SYMBOL         *first_sym(
 SYMBOL         *lookup_sym(
     char *label,
     SYMBOL_TABLE *table);
+
 SYMBOL         *next_sym(
     SYMBOL_TABLE *table,
     SYMBOL_ITER *iter);
+
 void            free_sym(
     SYMBOL *sym);
 
@@ -421,10 +426,14 @@ void            add_table(
     SYMBOL *sym,
     SYMBOL_TABLE *table);
 
-
 void            add_symbols(
     SECTION *current_section);
 
+int             symbol_compar(
+    const void *a,
+    const void *b);
+
 void            list_symbol_table(
     void);
-#endif
+
+#endif /* SYMBOLS__H */

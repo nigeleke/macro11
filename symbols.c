@@ -16,7 +16,7 @@
 int             symbol_len = SYMMAX_DEFAULT;    /* max. len of symbols. default = 6 */
 int             symbol_allow_underscores = 0;   /* allow "_" in symbol names */
 
-SYMBOL         *reg_sym[8];     /* Keep the register symbols in a handy array */
+SYMBOL         *reg_sym[9];     /* Keep the register symbols in a handy array */
 
 
 SYMBOL_TABLE    system_st;      /* System symbols (Instructions,
@@ -38,19 +38,19 @@ void list_section(SECTION *sec);
 void dump_sym(
     SYMBOL *sym)
 {
-    /* TODO: Replace report_err with something that doesn't show "***ERROR" */
-    report_err(NULL, "'%s': %06o, stmt %d, flags %o:%s%s%s%s%s%s%s\n",
-               sym->label,
-               sym->value,
-               sym->stmtno,
-               sym->flags,
-               ((sym->flags & SYMBOLFLAG_PERMANENT)? " PERMANENT" : ""),
-               ((sym->flags & SYMBOLFLAG_GLOBAL)? " GLOBAL" : ""),
-               ((sym->flags & SYMBOLFLAG_WEAK)? " WEAK" : ""),
-               ((sym->flags & SYMBOLFLAG_DEFINITION)? " DEFINITION" : ""),
-               ((sym->flags & SYMBOLFLAG_UNDEFINED)? " UNDEFINED" : ""),
-               ((sym->flags & SYMBOLFLAG_LOCAL)? " LOCAL" : ""),
-               ((sym->flags & SYMBOLFLAG_IMPLICIT_GLOBAL)? " IMPLICIT_GLOBAL" : ""));
+    /* TODO: Replace report_warn() with something like report_info() */
+    report_warn(NULL, "'%s': %06o, stmt %d, flags %o:%s%s%s%s%s%s%s\n",
+                sym->label,
+                sym->value,
+                sym->stmtno,
+                sym->flags,
+                ((sym->flags & SYMBOLFLAG_PERMANENT)? " PERMANENT" : ""),
+                ((sym->flags & SYMBOLFLAG_GLOBAL)? " GLOBAL" : ""),
+                ((sym->flags & SYMBOLFLAG_WEAK)? " WEAK" : ""),
+                ((sym->flags & SYMBOLFLAG_DEFINITION)? " DEFINITION" : ""),
+                ((sym->flags & SYMBOLFLAG_UNDEFINED)? " UNDEFINED" : ""),
+                ((sym->flags & SYMBOLFLAG_LOCAL)? " LOCAL" : ""),
+                ((sym->flags & SYMBOLFLAG_IMPLICIT_GLOBAL)? " IMPLICIT_GLOBAL" : ""));
 }
 
 void check_sym_invariants(
@@ -60,6 +60,8 @@ void check_sym_invariants(
     STREAM *stream)
 {
     int dump = 0;
+
+    /* TODO: Replace report_err() throughout with report_fatal() ? */
 
     if (sym->section == &instruction_section) {
         /* The instructions use the flags field differently */
@@ -416,13 +418,14 @@ void add_symbols(
     reg_sym[5] = ADD_SYM_REGISTER("R5", 5);
     reg_sym[6] = ADD_SYM_REGISTER("SP", 6);
     reg_sym[7] = ADD_SYM_REGISTER("PC", 7);
+    REG_ERR    = ADD_SYM_REGISTER("%E", REG_ERR_VALUE);  /* Used for invalid register-number (%0-%7) usage */
 
 #undef ADD_SYM_REGISTER
 
 /**********************************************************************/
 
 #define ADD_SYM_PSEUDO(label, value) \
-            add_sym(label, value, (SYMBOLFLAG_GLOBAL), \
+            add_sym(label, value, (SYMBOLFLAG_PERMANENT | SYMBOLFLAG_DEFINITION), \
                     &pseudo_section, &system_st, NULL)
 
     /* Symbols longer than current SYMMAX will be truncated. SYMMAX=6 is minimum! */
@@ -765,10 +768,87 @@ void sym_hist(
     }
 }
 
-/* TODO: Create a routine: rad50cmp() which will compare in RAD50 order a-la strcmp() */
-#define rad50cmp strcmp
+/* rad50order returns the order of a RAD50 character */
+/* Control-characters return lower than RAD50 and ...
+ * ... non-RAD50 characters return higher than RAD50 */
 
-static int symbol_compar(
+static int rad50order(
+    int c)
+{
+    enum rad50value {
+        R50_SPACE  = 000,  /* ' ' =  0. */
+        R50_ALPHA  = 001,  /* 'A' =  1. */
+                           /*  :        */
+                           /* 'Z' = 26. */
+        R50_DOLLAR = 033,  /* '$' = 27. */
+        R50_DOT    = 034,  /* '.' = 28. */
+        R50_UL     = 035,  /* '_' = 29. */
+        R50_DIGIT  = 036,  /* '0' = 30. */
+                           /*  :        */
+                           /* '9' = 39. */
+        R50_NOTR50 = 050   /* ... = 40. */
+    };
+
+    if (isupper(c))
+        return R50_ALPHA;
+
+    if (isdigit(c))
+        return R50_DIGIT;
+
+    switch (c) {
+    case ' ':
+        return R50_SPACE;
+
+    case '$':
+        return R50_DOLLAR;
+
+    case '.':
+        return R50_DOT;
+
+    case '_':
+        return R50_UL;
+    }
+
+    if (!iscntrl(c))
+        return R50_NOTR50;
+
+    return -1;
+}
+
+/* rad50cmp has the same function as strcmp() but with the RAD50 sort order. */
+/* The parameters are expected to contain only characters from the RAD50 set.
+ * The sort-order is for the first non-matching character in the two strings.
+ * '\nnn' sorts lowest and non-RAD50 characters (including lower-case) sort highest. */
+
+static int rad50cmp(
+    const char *p1,
+    const char *p2)
+{
+    const unsigned char *s1 = (const unsigned char *) p1;
+    const unsigned char *s2 = (const unsigned char *) p2;
+          unsigned char  c1,
+                         c2;
+
+    do {
+        c1 = *s1++;
+        c2 = *s2++;
+        if (c1 == '\0')
+	    return -c2;
+    } while (c1 == c2);
+
+    {
+       int r1 = rad50order((int) c1);
+       int r2 = rad50order((int) c2);
+
+       if (r1 != r2)
+           return r1 - r2;
+    }
+    return c1 - c2;
+}
+
+#define rad50cmp strcmp  // Uncomment this line to disable sorting in RADIX50 order
+
+int symbol_compar(
     const void *a,
     const void *b)
 {
@@ -784,7 +864,7 @@ void list_symbol_table(
     SYMBOL_ITER iter;
     SYMBOL *sym;
     int skip_locals = 0;
-    int longest_symbol = symbol_len;
+    int longest_symbol = 6;
     int nsyms = 0;
 
     fprintf(lstfile,"\n\nSymbol table\n\n");
@@ -871,7 +951,7 @@ void list_symbol_table(
 
     /* List sections */
 
-    fprintf(lstfile,"\n\nProgram sections:\n\n");
+    fprintf(lstfile,"\n\nProgram sections" /* ":" */ "\n\n");
 
     { /**/
     int i;

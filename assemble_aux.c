@@ -180,17 +180,15 @@ void free_addr_mode(
 unsigned get_register(
     EX_TREE *expr)
 {
-    unsigned        reg;
+    unsigned        reg = 0xE;  /* Invalid register number */
 
-    if (expr->type == EX_LIT && expr->data.lit <= 7) {
+    if (expr->type == EX_LIT)
         reg = expr->data.lit;
-        return reg;
-    }
-
-    if (expr->type == EX_SYM && expr->data.symbol->section->type == SECTION_REGISTER) {
+    else if (expr->type == EX_SYM && expr->data.symbol->section->type == SECTION_REGISTER)
         reg = expr->data.symbol->value;
+
+    if (reg <= 7)
         return reg;
-    }
 
     return NO_REG;
 }
@@ -783,6 +781,92 @@ int check_branch(
     return 1;
 }
 
+/* write_psect_globals writes out the psect header and globals for each psect */
+/* if gsd == NULL we only test the globals are unique and update the psect info */
+
+void write_psect_globals(
+    GSD *gsd)
+{
+    SYMBOL         *sym;
+    SECTION        *psect;
+    SYMBOL_ITER     sym_iter;
+    int             isect;
+    unsigned        nsyms = 0;
+    SYMBOL        **symbols = NULL;
+
+    /* TODO: Warnings if global symbols or PSECTs have '_' in them (?) */
+
+    /* Count the global symbols in the table */
+    for (sym = first_sym(&symbol_st, &sym_iter); sym != NULL; sym = next_sym(&symbol_st, &sym_iter))
+        if (sym->flags & SYMBOLFLAG_GLOBAL)
+            nsyms++;
+
+    /* Sort them by name */
+    if (nsyms) {
+        SYMBOL      **symbolp = symbols = malloc(nsyms * sizeof (SYMBOL *));
+
+        for (sym = first_sym(&symbol_st, &sym_iter); sym != NULL; sym = next_sym(&symbol_st, &sym_iter))
+            if (sym->flags & SYMBOLFLAG_GLOBAL)
+                *symbolp++ = sym;
+
+        qsort(symbols, nsyms, sizeof(SYMBOL *), symbol_compar);
+
+        if (nsyms > 1) {
+            unsigned      i = 0,
+                          j = 0;
+
+            while (++j < nsyms - 1) {
+                if (symbols[i] && strncmp(symbols[i]->label, symbols[j]->label, 6) == 0) {
+                    if (strncmp(symbols[i]->label, symbols[j]->label, 6) == 0) {
+#if 0  /* TODO: Fix when we have a true report_fatal() - or do what we need to get this into pass 1!!! */
+                        report_fatal(NULL, "Global symbol %s (in %s) causes %s (in %s) to be ignored\n",
+                            symbols[i]->label, (symbols[i]->section->label[0] == '\0') ? ". BLK." : symbols[i]->section->label,
+                            symbols[j]->label, (symbols[j]->section->label[0] == '\0') ? ". BLK." : symbols[j]->section->label);
+#else
+                        fprintf(stderr, "Global symbol %s (in %s) causes %s (in %s) to be ignored\n",
+                                        symbols[i]->label, (symbols[i]->section->label[0] == '\0') ? ". BLK." : symbols[i]->section->label,
+                                        symbols[j]->label, (symbols[j]->section->label[0] == '\0') ? ". BLK." : symbols[j]->section->label);
+#endif
+                        symbols[j] = NULL;
+                   }
+               } else {
+                   i = j;
+               }
+            }
+        }
+    }
+
+    /* write out each PSECT with its global stuff */
+    /* Sections must be written out in the order that they
+     * appear in the assembly file.  */
+    for (isect = 0; isect < sector; isect++) {
+        psect = sections[isect];
+
+        if (gsd)
+            gsd_psect(gsd, psect->label, psect->flags, psect->size);
+        psect->sector = isect;         /* Assign it a sector */
+        psect->pc = 0;                 /* Reset its PC for second pass */
+
+        if (gsd && nsyms) {
+            unsigned      i;
+
+            for (i = 0; i < nsyms; i++) {
+                if (symbols[i] && symbols[i]->section == psect) {
+                    gsd_global(gsd, symbols[i]->label,
+                               ((symbols[i]->flags & SYMBOLFLAG_DEFINITION) ? GLOBAL_DEF  : 0) |
+                               ((symbols[i]->flags & SYMBOLFLAG_WEAK)       ? GLOBAL_WEAK : 0) |
+                               ((symbols[i]->section->flags & PSECT_REL)    ? GLOBAL_REL  : 0) |
+                               0100,
+                               /* Looks undefined, but add it in anyway */
+                               symbols[i]->value);
+                }
+            }
+        }
+    }
+
+    if (nsyms)
+        free(symbols);
+}
 
 /* write_globals writes out the GSD prior to the second assembly pass */
 
@@ -790,19 +874,10 @@ void write_globals(
     FILE *obj)
 {
     GSD             gsd;
-    SYMBOL         *sym;
-    SECTION        *psect;
-    SYMBOL_ITER     sym_iter;
-    int             isect;
 
     if (obj == NULL) {
-        for (isect = 0; isect < sector; isect++) {
-            psect = sections[isect];
-
-            psect->sector = isect;     /* Assign it a sector */
-            psect->pc = 0;             /* Reset its PC for second pass */
-        }
-        return;                        /* Nothing more to do if no OBJ file. */
+        write_psect_globals(NULL);  /* Test the globals and fix up the psect if we don't have an object file */
+        return;
     }
 
     gsd_init(&gsd, obj);
@@ -812,40 +887,7 @@ void write_globals(
     if (ident)
         gsd_ident(&gsd, ident);
 
-    /* TODO: If -ysl > 6 we need to build a sorted list of global symbols
-     *       and check that any symbol written is unique in the first
-     *       six characters -- added advantage: symbols will be stored
-     *       in the object file in sorted order within their PSECTs */
-
-    /* TODO: We also need to check that all PSECTs are unique in the
-     *       first 6 chars */
-
-    /* TODO: Warnings if global symbols or PSECTs have '_' in them */
-
-    /* write out each PSECT with its global stuff */
-    /* Sections must be written out in the order that they
-       appear in the assembly file.  */
-    for (isect = 0; isect < sector; isect++) {
-        psect = sections[isect];
-
-        gsd_psect(&gsd, psect->label, psect->flags, psect->size);
-        psect->sector = isect;         /* Assign it a sector */
-        psect->pc = 0;                 /* Reset its PC for second pass */
-
-        sym = first_sym(&symbol_st, &sym_iter);
-        while (sym) {
-            if ((sym->flags & SYMBOLFLAG_GLOBAL) && sym->section == psect) {
-                gsd_global(&gsd, sym->label,
-                           ((sym->flags & SYMBOLFLAG_DEFINITION) ? GLOBAL_DEF  : 0) |
-                           ((sym->flags & SYMBOLFLAG_WEAK)       ? GLOBAL_WEAK : 0) |
-                           ((sym->section->flags & PSECT_REL)    ? GLOBAL_REL  : 0) |
-                           0100,
-                           /* Looks undefined, but add it in anyway */
-                           sym->value);
-            }
-            sym = next_sym(&symbol_st, &sym_iter);
-        }
-    }
+    write_psect_globals(&gsd);
 
     /* Finally write out the transfer address */
     if (xfer_address == NULL) {

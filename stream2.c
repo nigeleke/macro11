@@ -44,6 +44,7 @@ DAMAGE.
 #include <ctype.h>
 #include <stdarg.h>
 
+#include "listing.h"
 #include "util.h"
 
 #include "stream2.h"
@@ -302,10 +303,10 @@ static char    *file_getline(
      * RT-11 treats these characters the same as CR/LF */
 
     /* Skip any leading '\f' or '\v' on the line */
-    /* TODO: If we get a '\f' we ought to do the same as .PAGE */
 
     while (c = fgetc(fstr->fp), (c == '\f' || c == '\v'))
-        /* Do nothing */;
+        if (c == '\f')
+            list_line_act |= LIST_PAGE_BEFORE;
 
     /* Read single characters, end of line when '\n' or '\f' or '\v' hit */
 
@@ -316,6 +317,12 @@ static char    *file_getline(
                 fstr->buffer[i++] = (char) c;
         c = fgetc(fstr->fp);
     }
+
+    if (c == '\f')
+        list_line_act |= LIST_PAGE_AFTER;
+
+    if (i == 0 && (list_line_act & (LIST_PAGE_BEFORE | LIST_PAGE_AFTER)))
+        list_line_act |= LIST_SUPPRESS_LINE;
 
     fstr->buffer[i++] = '\n';          /* Silently transform trailing
                                           formfeeds and vertical-tabs into newlines */
@@ -337,6 +344,7 @@ void file_destroy(
     fclose(fstr->fp);
     free(fstr->buffer);
     stream_delete(str);
+    list_line_act |=  LIST_PAGE_BEFORE;  /* Throw a page before the next line */
 }
 
 /* Implement STREAM::rewind for a file stream */

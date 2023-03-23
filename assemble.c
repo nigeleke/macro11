@@ -28,7 +28,8 @@
 
 #define CHECK_EOL       check_eol(stack, cp)
 
-#define STRICT_IF_DF_NDF_RECURSES 1    /* 0 = '< ... >' forbidden, else allowed     */
+#define STRICT_IF_DF_NDF_RECURSES 1    /* 0 = '< ... >' forbidden, else allowed if !STRICTER */
+                                       /* TODO: This can probably be disabled permanently */
 
 /* Assemble a '.IF DF' or '.IF NDF' statement (or .IIF) */
 
@@ -69,19 +70,26 @@ static int eval_ifdf_ifndf(
             SYMBOL         *sym;
 
             if ((label = get_symbol(cp, &ncp, &islocal)) == NULL) {
-                report_err(stack->top, "Missing symbol name: %s", cp);
-                return 0;
+                if (STRICTER)  /* m11 allows a missing symbol */
+                    report_err(stack->top, "Missing symbol name\n");
+                return 0;  /* Assume a missing symbol returns FALSE */
             }
             if (islocal) {
                 report_err(stack->top, "Local symbols are not allowed: %s\n", label);
                 free(label);
-                return 0;
+                return 0;  /* Assume a local symbol returns FALSE */
             }
             sym = lookup_sym(label, &symbol_st);
             found = (sym != NULL);
             if (found)
                  if (sym->flags & SYMBOLFLAG_UNDEFINED)
                     found = 0;
+                 else if (sym->section->type == SECTION_INSTRUCTION)  /* Opcodes are undefined */
+                    found = 0;
+                 else if (sym->section->type == SECTION_PSEUDO)       /* Directives are undefined */
+                    found = 0;
+                 else
+                    ;  /* It must be truly "found" */
             free(label);
         }
 
@@ -179,6 +187,27 @@ static unsigned * assemble_rad50 (
 
     free(radstr);
     return ret;
+}
+
+/* Get the mode and check the result */
+
+int get_mode_check(
+    char *cp,
+    char **endp,
+    ADDR_MODE *mode,
+    char **error,
+    STREAM *str,
+    char *fmt)
+{
+    int             retval;
+
+    *error = NULL;
+    retval = get_mode(cp, endp, mode, error);
+
+    if (*error)
+        report_err(str, fmt, *error);
+
+    return retval;
 }
 
 /* assemble - read a line from the input stack, assemble it. */
@@ -295,7 +324,6 @@ O    75                                         .endc
                 }
                 ncp++;
             }
-
             if (label[0] == '.' && label[1] == '\0')
                 sym = NULL;
             else
@@ -537,15 +565,19 @@ do_mcalled_macro:
                     if (!STRINGENT)
                         return 1;
                     if (op->value == P_CROSS || op->value == P_NOCROSS)
-                        return 1;
+                        return 1;  /* .CROSS & .NOCROSS are valid without arguments */
                     report_warn(stack->top, "Directive '%s' should have arguments\n", op->label);
                     return 1;  /* Not strictly an error */
 
                 /* 2) Report an error for directives which do NOT accept arguments */
 
+                case P_PAGE:
+
+                    list_line_act |= LIST_PAGE_BEFORE;  /* Special case for .PAGE in case of error */
+
                 case P_ASECT:
                 case P_ENDC:
-                case P_ENDR:
+                case P_ENDR:    /* Undocumented: in MACRO-11 .ENDR is a synonym for .ENDM */
                 case P_EOT:     /* -stringent (MACRO-11 ignores this depricated directive) */
                 case P_EVEN:
                 case P_IFF:
@@ -554,17 +586,17 @@ do_mcalled_macro:
                 case P_LIMIT:
                 case P_MEXIT:
                 case P_ODD:
-                case P_PAGE:
                 case P_RESTORE:
                 case P_SAVE:
 
                     if (!EOL(*cp)) {
                         report_warn(stack->top, "Directive '%s' does not accept arguments\n", op->label);
-                        while (!EOL(*cp))
-                            cp++;  /* Remove all the arguments (just in case we CHECK_EOL etc. */
+                        if (op-> value != P_ENDR)
+                            while (!EOL(*cp))
+                                cp++;  /* Remove all the arguments (just in case we CHECK_EOL etc.) */
                     }
                     if (!STRINGENT)
-                        break;  /* Regardless of the message (if any) */
+                        break;       /* Regardless of the message (if any) */
                     if (op->value != P_EOT)
                         break;
                     report_warn(stack->top, "Directive '%s' is depricated\n", op->label);
@@ -572,24 +604,32 @@ do_mcalled_macro:
 
                 /* 3) Report an error for directives which REQUIRE arguments but have none */
 
-                case P_ASCII:
-                case P_ASCIZ:
-                case P_IDENT:
+                case P_ASCII:        /* Note that MACRO-11 uppercases the first character (bug) */
+                case P_ASCIZ:        /* Note that MACRO-11 uppercases the first character (bug) */
+                case P_REM:          /* Note that MACRO-11 uppercases the first character (bug) */
+
+                    if (*cp == ';')  /* Documented behaviour */
+                        break;
+
+                case P_IDENT:        /* Note that MACRO-11 uppercases the first character (bug) */
                 case P_INCLUDE:
+                case P_LIBRARY:
+                case P_RAD50:        /* Note that MACRO-11 uppercases the first character (bug) */
+
+                    if (!STRINGENT && *cp == ';')
+                        break;       /* We will treat ';' as an error (below) if -stringent */
+
                 case P_IRP:
                 case P_IRPC:
-                case P_LIBRARY:
-                case P_IF:       /* MACRO-11 treats this as TRUE and expects a .ENDC etc. */
-                case P_IFXX:     /* -stringent (but the same action as P_IF) */
+                case P_IF:           /* MACRO-11 treats this as TRUE and expects a .ENDC etc. */
+                case P_IFXX:         /* -stringent (but the same action as P_IF) */
                 case P_IIF:
                 case P_MACRO:
                 case P_NARG:
                 case P_NCHR:
                 case P_NTYPE:
-                case P_RAD50:
-                case P_REM:
                 case P_REPT:
-                case P_TITLE:
+                case P_TITLE:        /* Note that MACRO-11 uppercases the first character (bug) */
 
                     if (STRINGENT && op->value == P_IFXX)
                         report_warn(stack->top, "Directive '%s' is depricated\n", op->label);
@@ -622,14 +662,14 @@ do_mcalled_macro:
                         break;
                     if (!STRINGENT)
                         break;
-                    if (op->value != P_BLKB && op->value != P_BLKW &&
-                        op->value != P_BYTE && op->value != P_PACKED &&
+                    if (op->value != P_BLKB  && op->value != P_BLKW   &&
+                        op->value != P_BYTE  && op->value != P_PACKED &&
                         op->value != P_WORD)
                         break;
                     report_warn(stack->top, "Directive '%s' should have arguments\n", op->label);
                     break;  /* Not strictly an error */
 
-                /* 5) Report an error if we forgot any directives (all must appear here!) */
+                /* 5) Report an error if we forgot any directives (all MUST appear here!) */
 
                 default:
                     report_err(stack->top, "Directive '%s' is not yet supported\n", op->label);
@@ -647,13 +687,16 @@ do_mcalled_macro:
                    return 1;
 
                 case P_PAGE:
-                   /* TODO: Is listed in .MACROs and does not throw page
-                    *       Is not listed if outside a .MACRO definition */
-                   return 1;
+                    if (*cp == ';')
+                        list_line_act |= LIST_PAGE_BEFORE;  /* Extension: list the .PAGE if it has a comment */
+                    else
+                        list_line_act |= LIST_PAGE_BEFORE | LIST_SUPPRESS_LINE;  /* TODO: 'LABEL: .PAGE' is [wrongly] suppressed */
+                    return 1;
 
                 case P_SBTTL:
                     /* TODO: If we have page headings and TOC ...
-                     *       remember that ';' is valid within the subtitle text
+                     *       remember that ';' is valid within the subtitle text.
+                     *       Also, an empty SBTTL is allowed.
                      *       This is done on pass 1 if not .NLIST TOC */
 
                     /* This block is just so we can see the .SBTTL for debugging */
@@ -702,6 +745,7 @@ do_mcalled_macro:
                     /* TODO: .IDENT (eol)     ;*A error - and handled correctly here
                      *       .IDENT //        ;   Okay  - and handled correctly here
                      *       .IDENT /X/ /Y/   ;   Okay  - and handled correctly here
+                     *       .IDENT xABCX     ;   Okay  - need to fix
                      *       .IDENT xABCx     ;*A error
                      *       .IDENT /abc      ;*A no (or mismatched) terminator
                      *       .IDENT /abc+ef/  ;*A error - and handled correctly here
@@ -783,7 +827,7 @@ do_mcalled_macro:
                     if (!EOL(*cp)) {
                         EX_TREE        *value = parse_expr(cp, 0);
 
-                     /* TODO: List both the location and [if provided] the value */
+                        /* TODO: List both the location and [if provided] the value */
 
                         cp = value->cp;
                         if (value->type == EX_LIT)
@@ -893,10 +937,12 @@ do_mcalled_macro:
                             return 0;
                         }
 
+                        /* TODO: .NTYPE should throw a (-stringent) warning if not in a macro (see .NARG) */
+
                         cp = skipdelim(cp);
 
-                        if (!get_mode(cp, &cp, &mode, &error)) {
-                            report_err(stack->top, "Bad .NTYPE addressing mode (%s)\n", error);
+                        if (!get_mode_check(cp, &cp, &mode, &error, stack->top,
+                                            "Bad .NTYPE addressing mode (%s)\n")) {
                             free(label);
                             return 0;
                         }
@@ -921,7 +967,10 @@ do_mcalled_macro:
                             return 0;
                         }
 
-                        name = defext (name, "MAC");
+                        if (!CHECK_EOL)
+                            return 0;  /* V05.05 does not attempt to .INCLUDE for syntax errors */
+
+                        name = defext(name, "MAC");
                         my_searchenv(name, "INCLUDE", hitfile, sizeof(hitfile));
 
                         /* TODO: if (STRICT) exit if we can't .INCLUDE the file ...
@@ -932,7 +981,6 @@ do_mcalled_macro:
                             free(name);
                             return 0;
                         }
-
                         free(name);
 
                         incl = new_file_stream(hitfile);
@@ -942,8 +990,8 @@ do_mcalled_macro:
                         }
 
                         stack_push(stack, incl);
-
-                        return CHECK_EOL;
+                        list_line_act |= LIST_PAGE_AFTER;  /* Throw a page after listing the '.INCLUDE' */
+                        return 1;
                     }
 
                 case P_REM:
@@ -953,6 +1001,8 @@ do_mcalled_macro:
                         char            quote[4];
                         char            quote_ch = *cp++;
                         STREAM          top_here = { NULL, NULL, 0, NULL };
+
+                        /* TODO: Make a function in stream2.c to handle copying the STREAM info [top_here] */
 
                         if (quote_ch == '\0' || quote_ch == '\n') {  /* ';' is allowed */
                             report_err(stack->top, "Unexpected end-of-line (quote character expected)\n");
@@ -982,6 +1032,7 @@ do_mcalled_macro:
                             list_flush();
                             line = stack_getline(stack);     /* Read next input line */
                             if (line == NULL) {
+                            /* list_line_act &=  ~LIST_PAGE_BEFORE;  // Suppress the EOF page throw */
                                 report_err(&top_here, "Closing quote to .REM %c (here) is missing\n", quote_ch);
                                 free(top_here.name);
                                 return 0;  /* EOF */
@@ -1099,7 +1150,7 @@ do_mcalled_macro:
 
                 case P_MDELETE:
                     /* MACRO-11 only really uses this to save assembler memory */
-                    /* TODO: After a macro has been .MDELETEd its use should cause an error */
+                    /* TODO: After a macro has been .MDELETEd its use should cause an error (OQ) */
                     return 1;
 
                 case P_MEXIT:
@@ -1119,7 +1170,7 @@ do_mcalled_macro:
                         /* and finally, pop the macro */
                         stack_pop(stack);
 
-                        return CHECK_EOL;
+                        return 1;
                     }
 
                 case P_REPT:
@@ -1179,7 +1230,7 @@ do_mcalled_macro:
 
                 case P_LIMIT:
                     store_limits(stack->top, tr);
-                    return CHECK_EOL;
+                    return 1;
 
                 case P_TITLE:
                     /* accquire module name */
@@ -1200,11 +1251,11 @@ do_mcalled_macro:
                         memcpy(module_name, cp, len);
                         module_name[len] = '\0';
                         upcase(module_name);
-                     }
+                    }
 
-                     /* TODO: If we want page headings ...
-                      *       ... remember that ';' is valid within the title text ...
-                      *       ... and only the first 31 characters are listed */
+                    /* TODO: If we want page headings ...
+                     *       ... remember that ';' is valid within the title text ...
+                     *       ... and only the first 31 characters are listed */
 
                     return 1;
 
@@ -1249,23 +1300,37 @@ do_mcalled_macro:
                         /* Check if we are within a .IF block (unless -relaxed) */
                         if (!RELAXED && last_cond >= 0) {
                             if (STRICT) {  /* If -strict simply report the error */
-                                report_warn(stack->top, ".END within .IF has been ignored\n");
+                                report_warn(stack->top, ".END within .IF will not end assembly\n");
                                 return 0;
                             }
                             report_err(stack->top, ".END within .IF has been executed\n");
                             retval = 0;  /* Else honour it */
                         }
 
-                        /*  We stop all further assembly here.
-                         *  This means ignoring any further files
-                         *  on the command line and, if we are
-                         *  currently in an .INCLUDE, any outer files. */
+                        /* Before flushing the whole stack ... flush the topmost (current) entry */
+                        /* TODO: Put this in stream2.c: stack_flush(stack); */
+
+                        do
+                            cp = stack->top->vtbl->getline(stack->top);
+                        while (cp != NULL);
+                        list_line_act &= ~LIST_PAGE_BEFORE;  /* Suppress the EOF page throw */
+
+                        /* If not -strict we only flush the current .INCLUDE etc. */
+
+                        if (!STRICTER)
+                            return retval;    /* TODO: Provide better m11 support (-ym11 ?) */
+
+                        /* We stop all further assembly here.
+                         * This means ignoring any further files
+                         * on the command line. */
 
                         /* Read and discard any lines following the .END */
                         /* TODO: Count them and if -yd write the count out (?) */
+                        /* TODO: Put this in stream2.c: stack_flush_all(stack); */
                         do
                             cp = stack_getline(stack);
                         while (cp != NULL);
+                        list_line_act &= ~LIST_PAGE_BEFORE;  /* Suppress the EOF page throw */
                         return retval;
                     }
 
@@ -1372,12 +1437,14 @@ do_mcalled_macro:
                                 list_value(stack->top, 0);
                                 free_tree(tvalue);
 
-                                /* TODO: Undefined symbols are treated as zero for '.IF XX'
-                                 *       V05.05 does strange things when XX is undefined for ...
-                                 *       ... '.IIF XX' (I'm not quite sure what) */
+                                /* Undefined symbols are treated as zero for '.IF XX'
+                                 * V05.05 does strange things when XX is undefined for ...
+                                 * ... '.IIF XX' (I'm not quite sure what) */
 
-                                ok = TRUE;     /* Pick something. */
-                            } else {
+                                /* If the condition is also invalid, we'll see two errors */
+                                tvalue = new_ex_lit(0);
+                            /*  ok = TRUE;     // Pick something. */
+                            } /* else */ {
                                 unsigned        word;
 
                                 /* Convert to signed and unsigned words */
@@ -1413,8 +1480,9 @@ do_mcalled_macro:
                                     ok = 0, word = 0;
                                 }
 
-                                if (!STRICTER /* TODO: Replace !STRICTER with an extended listing control */ )
-                                    list_value(stack->top, word);
+                                if (op->value != P_IIF)
+                                //  if (!STRICTER /* TODO: Replace !STRICTER with an extended listing control */ )
+                                        list_value(stack->top, word);  /* Extension to MACRO-11 */
 
                                 free_tree(tvalue);
                             }
@@ -1525,12 +1593,25 @@ do_mcalled_macro:
                             sect = &blank_section;
                             cp = skipwhite(cp);
                             if (*cp != ',' && !EOL(*cp)) {
-                                report_err(stack->top, "Invalid %s name: %s",
-                                           op->label, cp);
+                                report_err(stack->top, "Invalid %s name: %.*s\n",
+                                                       op->label, strcspn(cp, "\n"), cp);
                                 return 0;
                             }
-                        }
-                        else {
+                        } else {
+#if 0
+                            if (label[0] == '.' && label[1] == '\0') {
+                                report_err(stack->top, "%s '.' is not permitted\n", op->label);
+                                           /* Actually, RSX DOES permit this */
+                                free(label);
+                                return 0;
+                            }
+#endif
+                            if (strlen(label) > 6) {
+                                if (STRINGENT)
+                                    report_warn(stack->top, "%s name '%s' truncated to '%.6s'\n",
+                                                            op->label, label, label);
+                                label[6] = '\0';
+                            }
                             sectsym = lookup_sym(label, &section_st);
                             if (sectsym) {
                                 sect = sectsym->section;
@@ -1561,7 +1642,8 @@ do_mcalled_macro:
                         if (op->value == P_CSECT) {
                             cp = skipwhite(cp);
                             if (*cp == ',')
-                                report_warn(stack->top, "Unexpected flag(s) to .CSECT directive: %s", cp);
+                                report_warn(stack->top, "Unexpected flag(s) to .CSECT directive: %.*s\n",
+                                                        strcspn(cp, "\n"), cp);
                                 /* Process them anyway and use them as best we can */
                         }
 
@@ -1571,7 +1653,8 @@ do_mcalled_macro:
                                 /* Parse section options */
                                 label = get_symbol(cp, &cp, NULL);
                                 if (!label) {
-                                    report_err(stack->top, "Unknown flag(s) to .PSECT directive: %s", cp);
+                                    report_err(stack->top, "Unknown flag(s) to %s directive: %s",
+                                                           op->label, cp);
                                     return 0;
                                 }
                                 if (strcmp(label, "ABS") == 0) {
@@ -1600,11 +1683,11 @@ do_mcalled_macro:
                                 } else if (strcmp(label, "LCL") == 0) {
                                     sect->flags &= ~PSECT_GBL;      /* Local */
                                 } else {
-                                    report_err(stack->top, "Unknown flag '%s' given to .PSECT directive\n", label);
-                                    free(label);
-                                    return 0;
+                                    report_warn(stack->top, "Unknown %s attribute '%s' [ignored]\n",
+                                                            op->label, label);
+                                /*  free(label);
+                                 *  return 0;  // Continue parsing anyway */
                                 }
-
                                 free(label);
                             }
                             /* If a section is declared a second time, and flags
@@ -1723,7 +1806,7 @@ do_mcalled_macro:
                 case P_WORD:
                     {
                         /* .WORD might be followed by nothing, which
-                           is an implicit .WORD 0 */
+                         * is an implicit .WORD 0 */
                         if (EOL(*cp)) {
                             store_word(stack->top, tr, 2, 0);
                             return 1;
@@ -1732,8 +1815,9 @@ do_mcalled_macro:
                     }
 
                 case P_BYTE:
+                        /* .BYTE might be followed by nothing, which
+                         * is an implicit .BYTE 0 */
                     if (EOL(*cp)) {
-                        /* Blank .BYTE.  Same as .BYTE 0 */
                         store_word(stack->top, tr, 1, 0);
                         return 1;
                     } else
@@ -1811,6 +1895,7 @@ do_mcalled_macro:
                     /* TODO: .RAD50 (eol)     ;*A error - and handled correctly here
                      *       .RAD50 //        ;   Okay  - and handled correctly here
                      *       .RAD50 /X/ /Y/   ;   Okay  - and handled correctly here
+                     *       .RAD50 xABCX     ;   Okay  - need to fix
                      *       .RAD50 xABCx     ;*A error
                      *       .RAD50 /abc      ;*A no (or mismatched) terminator
                      *       .RAD50 /abc+ef/  ;*A error - and handled correctly here
@@ -1983,16 +2068,15 @@ do_mcalled_macro:
                             unsigned        word;
                             char           *error;
 
-                            if (!get_mode(cp, &cp, &mode, &error)) {
-                                report_err(stack->top,
-                                           "Invalid addressing mode (%s)\n", error);
+                            if (!get_mode_check(cp, &cp, &mode, &error, stack->top,
+                                                "Invalid addressing mode (%s)\n")) {
                                 return 0;
                             }
 
                             if ((mode.type & 070) == MODE_REG &&
                                 (op->value == I_JMP || op->value == I_CALL ||
                                  op->value == I_TSTSET || op->value == I_WRTLCK)) {
-                                if (!STRICTER)
+                            /*  if (!STRICTER)  */
                                     report_warn(stack->top, "%s Rn is impossible\n", op->label);
                                 /* But encode it anyway... */
                             }
@@ -2018,10 +2102,8 @@ do_mcalled_macro:
                             unsigned        word;
                             char           *error;
 
-                            if (!get_mode(cp, &cp, &left, &error)) {
-                                report_err(stack->top,
-                                           "Invalid addressing mode (1st operand: %s)\n",
-                                           error);
+                            if (!get_mode_check(cp, &cp, &left, &error, stack->top,
+                                                "Invalid addressing mode (1st operand: %s)\n")) {
                                 return 0;
                             }
 
@@ -2032,10 +2114,8 @@ do_mcalled_macro:
                                 return 0;
                             }
 
-                            if (!get_mode(cp, &cp, &right, &error)) {
-                                report_err(stack->top,
-                                           "Invalid addressing mode (2nd operand: %s)\n",
-                                           error);
+                            if (!get_mode_check(cp, &cp, &right, &error, stack->top,
+                                                "Invalid addressing mode (2nd operand: %s)\n")) {
                                 free_addr_mode(&left);
                                 return 0;
                             }
@@ -2194,10 +2274,8 @@ do_mcalled_macro:
                             unsigned        word;
                             char           *error;
 
-                            if (!get_mode(cp, &cp, &mode, &error)) {
-                                report_err(stack->top,
-                                           "Invalid addressing mode (1st operand: %s)\n",
-                                           error);
+                            if (!get_mode_check(cp, &cp, &mode, &error, stack->top,
+                                                "Invalid addressing mode (1st operand: %s)\n")) {
                                 return 0;
                             }
 
@@ -2250,16 +2328,14 @@ do_mcalled_macro:
                                 return 0;
                             }
 
-                            if (!get_mode(cp, &cp, &mode, &error)) {
-                                report_err(stack->top,
-                                           "Invalid addressing mode (2nd operand: %s)\n",
-                                           error);
+                            if (!get_mode_check(cp, &cp, &mode, &error, stack->top,
+                                           "Invalid addressing mode (2nd operand: %s)\n")) {
                                 free_tree(value);
                                 return 0;
                             }
 
                             if (op->value == I_JSR && (mode.type & 070) == 0) {
-                                if (!STRICTER)
+                            /*  if (!STRICTER)  */
                                     report_warn(stack->top, "JSR Rn,Rm is impossible\n");
                                 /* But encode it anyway... */
                             }
@@ -2320,8 +2396,12 @@ do_mcalled_macro:
                             ADDR_MODE       mode;
                             unsigned        word;
 
-                            if (!get_fp_src_mode(cp, &cp, &mode)) {
-                                report_err(stack->top, "Invalid addressing mode\n");
+                            error = NULL;
+                            get_fp_src_mode(cp, &cp, &mode, &error);
+                            if (error) {
+                                report_err(stack->top,
+                                           "Invalid addressing mode (1st operand, fsrc: %s)\n",
+                                           error);
                                 return 0;
                             }
 
@@ -2343,17 +2423,17 @@ do_mcalled_macro:
                             char           *error;
 
                             if ((op->flags & OC_MASK) == OC_FPP_FSRCAC) {
-                                if (!get_fp_src_mode(cp, &cp, &mode, &error)) {
+                                error = NULL;
+                                get_fp_src_mode(cp, &cp, &mode, &error);
+                                if (error) {
                                     report_err(stack->top,
                                                "Invalid addressing mode (1st operand, fsrc: %s)\n",
                                                error);
                                     return 0;
                                 }
                             } else {
-                                if (!get_mode(cp, &cp, &mode, &error)) {
-                                    report_err(stack->top,
-                                               "Invalid addressing mode (1st operand: %s)\n",
-                                               error);
+                                if (!get_mode_check(cp, &cp, &mode, &error, stack->top,
+                                                    "Invalid addressing mode (1st operand: %s)\n")) {
                                     return 0;
                                 }
                             }
@@ -2410,10 +2490,8 @@ do_mcalled_macro:
                                 return 0;
                             }
 
-                            if (!get_mode(cp, &cp, &mode, &error)) {
-                                report_err(stack->top,
-                                           "Invalid addressing mode (2nd operand: %s)\n",
-                                           error);
+                            if (!get_mode_check(cp, &cp, &mode, &error, stack->top,
+                                                "Invalid addressing mode (2nd operand: %s)\n")) {
                                 free_tree(value);
                                 return 0;
                             }

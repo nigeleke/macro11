@@ -921,7 +921,7 @@ EX_TREE        *evaluate(
         res = evaluate_rec(tp, flags, &outflags);
 
         if (outflags & EVALUATE_OUT_IS_REGISTER) {
-            int regno = get_register(res);
+            int             regno = get_register(res);
 
             if (regno == NO_REG) {
                 report_err(NULL, "Register expression out of range\n");
@@ -930,9 +930,26 @@ EX_TREE        *evaluate(
                 print_tree(stderr, res, 0);
 #endif /* DEBUG_REGEXPR */
                 /* TODO: maybe make this a EX_TEMP_SYM? */
-                res = ex_err(res, res->cp);
+
+/* TODO: Once we're happy with this ... clean up and consolidate the 'else' part */
+
+#if 0    /* Original */
+                res = ex_err(res, res->cp);   /* Return an EX_LIT */
+#elif 0  /* Simple fix - but we can do better */
+                free_tree(res);
+                res = ex_err(NULL, res->cp);  /* Don't return an EX_LIT so we catch the error later */
+#else    /* This is the bit we want to keep - but join up with the 'else' */
+                {
+                    EX_TREE        *newresult = new_ex_tree(EX_SYM);
+
+                    newresult->cp = res->cp;
+                    newresult->data.symbol = REG_ERR;
+                    free_tree(res);
+                    res = newresult;
+                }
+#endif
             } else {
-                EX_TREE *newresult = new_ex_tree(EX_SYM);
+                EX_TREE        *newresult = new_ex_tree(EX_SYM);
 
                 newresult->cp = res->cp;
                 newresult->data.symbol = reg_sym[regno];

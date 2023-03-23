@@ -203,17 +203,19 @@ int get_mode(
     mode->pcrel = 0;
     mode->type = MODE_REG;
 
+    /* TODO: Clean up all #if 0 ... #endif once we're happy with the changes */
+
     cp = skipwhite(cp);
 
     /* @ means "indirect," sets bit 3 */
     if (*cp == '@') {
-        cp++;
+        cp = skipwhite(cp + 1);
         mode->type |= MODE_INDIRECT;
     }
 
     /* Immediate modes #imm and @#imm */
     if (*cp == '#') {
-        cp++;
+        cp = skipwhite(cp + 1);
         mode->type |= MODE_AUTO_INCR | MODE_PC;
 
         mode->offset = parse_expr(cp, 0);
@@ -244,8 +246,10 @@ int get_mode(
             reg = get_register(value);
             if (reg == NO_REG) {
                 *error = "Register expected after '-('";
+#if 0
                 free_tree(value);
                 return FALSE;
+#endif
             }
             if (tcp = skipwhite(value->cp), *tcp++ != ')') {
                 *error = "')' expected after register";
@@ -270,8 +274,10 @@ int get_mode(
 
         if (reg == NO_REG) {
             *error = "Register expected after '('";
+#if 0
             free_tree(value);
             return FALSE;
+#endif
         }
         if (tcp = skipwhite(value->cp), *tcp++ != ')') {
             *error = "')' expected after register";
@@ -328,10 +334,12 @@ int get_mode(
         reg = get_register(value);
         if (reg == NO_REG) {
             *error = "Register expected after 'offset('";
+#if 0
             free_tree(value);
             free_tree(mode->offset);
             mode->offset = NULL;
             return FALSE;              /* Syntax error in addressing mode */
+#endif
         }
         if (cp = skipwhite(value->cp), *cp++ != ')') {
             *error = "')' expected after 'offset(register'";
@@ -363,6 +371,12 @@ int get_mode(
             free_tree(mode->offset);
             mode->offset = NULL;
             mode->type |= sym->value;
+            if (sym->value == REG_ERR_VALUE) {
+                *error = "Invalid register";
+#if 0
+                return FALSE;
+#endif
+            }
             return TRUE;
         }
     }
@@ -1033,8 +1047,10 @@ EX_TREE        *parse_binary(
             break;
 
         case '_':
-            if (STRICTEST || symbol_allow_underscores || depth >= LSH_PREC)
-                return leftp;
+            if (STRICTEST || symbol_allow_underscores || depth >= LSH_PREC) {
+                report_warn(NULL, "'_' is not strictly allowed\n");
+            /*  return leftp;  */
+            }
 
             rightp = parse_binary(cp + 1, term, LSH_PREC);
             tp = new_ex_bin(EX_LSH, leftp, rightp);
@@ -1242,6 +1258,9 @@ EX_TREE        *parse_unary(
     if (*cp == '^') {
         int             save_radix;
 
+        if (!STRINGENT)
+            cp = skipwhite(cp + 1) - 1;
+
         switch (tolower((unsigned char)cp[1])) {
         case 'c':
             /* ^C, ones complement */
@@ -1286,12 +1305,12 @@ EX_TREE        *parse_unary(
                 if (brackrange(cp, &start, &len, &endcp)) {
                    value = rad50(cp + start, NULL);
                     if (STRICTER)
-                        report_warn(NULL, "^R<...> is an extension to MACRO-11\n");
+                        report_warn(NULL, "^R<...> is not strictly allowed\n");
                  } else {
                     value = rad50(cp, &endcp);
                     /* It turns out that ^R allows extra characters;
                      * it will stop consuming input at the first
-                     * non-RAD50 character. */
+                     * non-RAD50 character.  It is actually documented. */
                     while (ascii2rad50 (*endcp) != -1)
                         endcp++;
                 }
@@ -1313,14 +1332,30 @@ EX_TREE        *parse_unary(
                 return tp;
             }
         case 'p':
-            /* psect limits, low or high */ {
-                char bound = (char) tolower((unsigned char)cp[2]);
-                char *cp2 = skipwhite(cp + 3);
-                int islocal = 0;
-                char *endcp = NULL;
-                char *psectname = get_symbol(cp2, &endcp, &islocal);
-                SYMBOL *sectsym = psectname ? lookup_sym(psectname, &section_st) : NULL;
+            /* psect limits, low or high */
+            {
+                char            bound;
+                int             islocal = 0;
+                char           *endcp = NULL;
+                char           *psectname;
+                SYMBOL         *sectsym;
 
+                cp += 2;
+                bound = (char) tolower((unsigned char) *cp);
+                cp = skipwhite(cp + 1);
+
+                if (bound != 'l' && bound != 'h') {
+                /*  report_err(NULL, "^p?: '%c' not recognized\n", bound);  */
+                    return ex_err(NULL, cp);
+                }
+
+                psectname = get_symbol(cp, &endcp, &islocal);
+                if (!psectname) {
+                /*  report_err(NULL, "^p%c: Invalid psect name: %.*s\n", bound, strcspn(cp, "\n"), cp);  */
+                    return ex_err(NULL, endcp);
+                }
+
+                sectsym = lookup_sym(psectname, &section_st);
                 if (sectsym && !islocal) {
                     SECTION *psect = sectsym->section;
 
@@ -1330,15 +1365,13 @@ EX_TREE        *parse_unary(
 
                     if (bound == 'l') {
                         ; /* that's it */
-                    } else if (bound == 'h') {
+                    } else  /* if (bound == 'h') */ {
                         EX_TREE *rightp = new_ex_lit(psect->size);
                         tp = new_ex_bin(EX_ADD, tp, rightp);
-                    } else {
-                        tp = ex_err(tp, endcp);
-                        /* report_err(stack->top, "^p: %c not recognized\n", bound); */
+                        /* TODO: Find out why 'SYM = ^phPSECT*2' is complex */
                     }
                 } else {
-                    /* report_err(stack->top, "psect name %s not found\n", psectname); */
+                /*  report_err(NULL, "%^p%c: psect name %s not found\n", bound, psectname);  */
                     if (!endcp) {
                         endcp = cp;
                     }
@@ -1347,11 +1380,12 @@ EX_TREE        *parse_unary(
                 }
                 free(psectname);
 
-                if (STRICTEST && tp->type != EX_ERR)
-                    return ex_err(tp, endcp);
+                if (STRICTEST && tp->type != EX_ERR) {
+                    report_warn(NULL, "^p%C is not strictly allowed\n", bound);
+                /*  return ex_err(tp, endcp);  */
+                }
 
                 tp->cp = endcp;
-            /*  cp = endcp;  // TODO: Not needed  */
                 return tp;
             }
         }

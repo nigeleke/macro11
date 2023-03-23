@@ -1,6 +1,143 @@
 
 ----------- Mike Hill's entries ------------------
 
+21-Mar-2023: Mike Hill
+        Fixed error message within macro call showing following lines
+        - assemble.c
+          Use (..., "...%*s\n", strcspn(cp, "\n"), cp);
+        .IF XX now treats undefined symbols as zero (still with an error)
+        - assemble.c
+          Removed the "Pick something" and replaced it with a new_ex_lit(0)
+        We now check for -ysl > 6 that there are no duplicate globals
+        - assemble_aux.c
+          Added write_psect_globals() to check the globals and output the psects & globals
+        - symbols.h
+          Declare symbol_compar()
+        - symbols.c
+          Remove 'static' from symbol_compar()
+
+20-Mar-2023: Mike Hill
+        Fixes after trying all tests with -stringent (.mac) and -strict (.m11)
+        - parse.c
+          case '_': report_warn() only (but return correct result)
+          case 'r': changed report_warn() message
+          case 'p': report_warn() only (but return correct result)
+        - assemble.c
+          eval_ifdf_ifndf(): report_warn() if missing symbol only if -strict*2 (m11 treats '.IF DF' w/o arg as FALSE)
+          P_END: now removes LIST_PAGE_BEFORE flag from list_line_act
+          P_IF: now always lists the result of the .IF (extension to MACRO-11, but I like it)
+          P_IIF: now never lists the result (because the TRUE part might want to put a value there)
+          OC_1GEN: and OC_JSR: now always show the message for "JMP/JSR/TSTSET/WRTLCK Rn is impossible"
+        - symbols.c
+          dump_sym(): Replaced report_err() with report_warn() -- just to be ready
+
+17-Mar-2023: Mike Hill
+        Changed .INCLUDE to NOT try to include the file if there is a syntax error on the line (like V05.05)
+        - assemble.c
+          CHECK_EOL before trying to open the include file
+        - util.c
+          Added a memcheck() to defext()
+        Allow whitespace after '@' and '-' etc. -- E.g. 'TST @ - ( R0 )'
+        - parse.c
+        Avoid phase errors & improve handling of complex register refs. [ e.g. A = %B // TST A // B=5. // L1: // .END ]
+          The down-side is that illegal register assignments will list the wrong value (e.g. A=%8. will list 177700)
+          The same applies to instructions referencing illegal registers (e.g. MOV %8.,-(SP) will generate 170046)
+        - symbols.h
+          Add an extra reg_sym to handle errors (REG_ERR)
+        - symbols.c
+          add_sym() REG_ERR: "%E" = 0177700 (chosen so binary generated is visibly wrong)
+        - assemble_aux.c
+          get_register() now returns NO_REG if SECTION_REGISTER value is invalid (only applies to REG_ERR = reg_sym[8])
+        - extree.c
+          evaluate() returns REG_ERR if the EVALUATE_OUT_IS_REGISTER is out-of-range
+        - parse.c
+          get_mode() does not return FALSE for NO_REG errors but DOES return error message
+        - assemble.c
+          New routine get_mode_check() as a wrapper to get_mode()
+          Replaced all calls to get_mode() with get_mode_check()
+          Put a local wrapper around call to get_fp_src_mode()
+
+16-Mar-2023: Mike Hill
+        Further updates for page throwing
+        - assemble.c
+          .PAGE XXX now throws the error after throwing the page
+        - listing.h
+          Add list_page_fmt
+          Add list_throw_page()
+        - listing.c
+          Add list_page_fmt = "\n\n"
+          Add list_throw_page()
+        - stream2.c
+          Throw a page between files (command-line or .INCLUDE)
+        
+15-Mar-2023: Mike Hill
+        Updated report_xxx() for future expansion (see 06-Mar)
+        - listing.h
+          Added #define REPORT_xxx
+          Changed #define report_xxx to use __VA_ARGS__
+        Make sure that EVALUATE_OUT_IS_REGISTER for a bad register returns a non-EX_LIT EX_ERR
+          We do this to get the same result as tests/test-reg.mac (but any result is "wrong")
+        - extree.c
+        Sort symbol table in RADIX50 order (make ready)
+        - symbols.c
+          Added two routines: rad50order() and rad50cmp()
+          Added a #define rad50cmp to [currently] disable this
+          Fixed initialization of 'longest_symbol' in list_symbol_table()
+          Removed the ":" from "Program sections" to match "Symbol table"
+        Implement page throws (2 x \n) before .PAGE [not suppressed if ';'] (also for '\f') and after .INCLUDE
+          Note: Blank lines (truly blank: 'whitespace != blank') after a [suppressed] page-throw are suppressed
+        - listing.h
+          Added int list_page_top, list_line_act with #define LIST_*
+        - listing.c
+          Added int list_page_top, list_line_act
+          list_flush() now uses LIST_* to throw pages
+          report() now throws a page before the error message if the line asked for a page-throw 'BEFORE'
+        - macro11.c
+          Initialize list_page_top & list_line_act in prepare_pass()
+        - assemble.c
+          P_PAGE: throw page and suppress '.PAGE' if no comment on line (unlike MACRO-11, we don't auppress if ';')
+          P_INCLUDE: throw page after showing .INCLUDE
+        - stream2.c
+          Handle '\f' with both BEFORE and AFTER (and suppress lines which ONLY have '\f' -- like .PAGE)
+
+14-Mar-2023: Mike Hill
+        Further changes
+        - assemble.c
+          Silently [unless -stringent] truncate .CSECT & .PSECT names to max 6 characters (-ysl > 6)
+        - parse.c
+          Allow whitespace between '^' and 'p' etc. (if not -stringent)
+          Finish cleaning up the ^P code
+
+13-Mar-2023: Mike Hill
+        More changes to parsing and error handling
+        - assemble.c
+          If not -strict*2 treat .END as only .ENDing the current stack level
+            This allows the .m11 .INCLUDE files (which contain .END) to assemble
+          Handle .ENDR as a synonym to .ENDM but with a -stringent warning if it has a parameter
+          Changed "unknown flag ... given to .PSECT directive" message (P_CSECT/P_PSECT)
+            ... and treat it as a warning (continue parsing)
+          Disallow '.' as a .CSECT or .PSECT name [ but commented out - it IS allowed on RSX ]
+          Changed error message '.END within .IF' to be clearer
+        Undid the change from 02-Mar to set pseudo symbols flags = SYMBOLFLAG_GLOBAL (there is ALWAYS a better way)
+        - symbols.c
+          Restored ADD_SYM_PSEUDO to (SYMBOLFLAG_PERMANENT | SYMBOLFLAG_DEFINITION)
+        - assemble.c
+          For -strict we now check for this in eval_ifdf_ifndf() else we allow '.IF DF .ASCII' etc.
+
+11-Mar-2023: Mike Hill
+        Changed version to 0.8.2
+        - macro11.h
+        Fixes to stuff found by Rhialto:-
+        - macro11.c
+          Fixed order of printf() parameters
+        - assemble.c
+          Fixed .ASCII and .ASCIZ error message for ';' as a quote
+            Also for .IDENT .INCLUDE .LIBRARY .RAD50 (unless -stringent) and .REM
+          Added a TODO for P_REM: to make 'top_here' into a routine in stream2
+        - parse.c
+          Fixed ^PX looping 
+            Also fixed ^P<EOL> etc. (started rewriting the case 'p': part) - but need to clean it up
+
 09-Mar-2023: Mike Hill
         Added syntax checking for .CROSS & .NOCROSS and create GX symbols if undefined (as V05.05)
         - symbols.h

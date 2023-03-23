@@ -233,6 +233,8 @@ void prepare_pass(int this_pass, STACK *stack, int nr_files, char **fnames)
     current_pc->section = &blank_section;
     last_dot_section = NULL;
     pass = this_pass;
+    list_page_top = 1;  /* TODO: If we implement true pagination, set this to 0 */
+    list_line_act = LIST_PAGE_BEFORE;
     report_errcnt = 0;
     stmtno = 0;
     lsb = 0;
@@ -258,6 +260,9 @@ void prepare_pass(int this_pass, STACK *stack, int nr_files, char **fnames)
         } else {
             UPD_DEBUG_SYM(DEBUG_SYM_ERRCNT, report_errcnt);
         }
+
+        /* TODO: Put this into a new top-level stream and assemble normally */
+
         if (lstfile && (pass || list_pass_0)) {
             fprintf(lstfile, DEBUG_SYM_DLEVEL " =:%3d  ; Debugging enabled at level %d\n",
                     enabl_debug, enabl_debug);
