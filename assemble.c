@@ -81,15 +81,17 @@ static int eval_ifdf_ifndf(
             }
             sym = lookup_sym(label, &symbol_st);
             found = (sym != NULL);
-            if (found)
-                 if (sym->flags & SYMBOLFLAG_UNDEFINED)
+            if (found) {
+                 if (sym->flags & SYMBOLFLAG_UNDEFINED) {
                     found = 0;
-                 else if (sym->section->type == SECTION_INSTRUCTION)  /* Opcodes are undefined */
+                 } else if (sym->section->type == SECTION_INSTRUCTION) {  /* Opcodes are undefined */
                     found = 0;
-                 else if (sym->section->type == SECTION_PSEUDO)       /* Directives are undefined */
+                 } else if (sym->section->type == SECTION_PSEUDO) {       /* Directives are undefined */
                     found = 0;
-                 else
+                 } else {
                     ;  /* It must be truly "found" */
+                 }
+            }
             free(label);
         }
 
