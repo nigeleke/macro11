@@ -73,8 +73,7 @@
       73                                
       74                                	.dsabl AMA
       75                                
-      76                                	.END
-      76                                
+      76        000001                  	.END
 
 
 Symbol table
@@ -82,7 +81,7 @@ Symbol table
 .     = 001030           X     = 001234           Y       000002R      002 
 
 
-Program sections:
+Program sections
 
 . ABS.  001030    000   (RW,I,GBL,ABS,OVR,NOSAV)
         000000    001   (RW,I,LCL,REL,CON,NOSAV)

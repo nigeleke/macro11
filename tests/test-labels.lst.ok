@@ -17,7 +17,7 @@ Symbol table
 LAB1    000000R      001 LAB3    000004R      001 LAB5    000006RG     001 LAB7    000006R      001 
 
 
-Program sections:
+Program sections
 
 . ABS.  000000    000   (RW,I,GBL,ABS,OVR,NOSAV)
         000010    001   (RW,I,LCL,REL,CON,NOSAV)

@@ -25,7 +25,7 @@ Symbol table
 .       000014R      001 1$0     000010R  L   001 LAB1  = ****** GX        LAB2  = ******           
 
 
-Program sections:
+Program sections
 
 . ABS.  000000    000   (RW,I,GBL,ABS,OVR,NOSAV)
         000014    001   (RW,I,LCL,REL,CON,NOSAV)

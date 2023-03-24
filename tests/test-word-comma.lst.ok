@@ -1,4 +1,3 @@
-       1                                
        2 000000 000123                  start:  .word   123    ; 1 word
        3 000002 000000                          .word          ; 1 word
        4 000004 000001  000000                  .word   1,     ; 2 words
@@ -32,7 +31,7 @@ Symbol table
 .       000142R      001 START   000000R      001 
 
 
-Program sections:
+Program sections
 
 . ABS.  000000    000   (RW,I,GBL,ABS,OVR,NOSAV)
         000142    001   (RW,I,LCL,REL,CON,NOSAV)

@@ -58,7 +58,7 @@ Symbol table
 .       000004R      001 A     = 000001           
 
 
-Program sections:
+Program sections
 
 . ABS.  000000    000   (RW,I,GBL,ABS,OVR,NOSAV)
         000004    001   (RW,I,LCL,REL,CON,NOSAV)

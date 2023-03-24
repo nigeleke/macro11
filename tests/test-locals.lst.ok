@@ -54,7 +54,7 @@ Symbol table
 1$5      000040R  L   001 2$5      000042R  L   001 4$4      000036R  L   001 LAB3     000014R      001 
 
 
-Program sections:
+Program sections
 
 . ABS.  000000    000   (RW,I,GBL,ABS,OVR,NOSAV)
         000052    001   (RW,I,LCL,REL,CON,NOSAV)

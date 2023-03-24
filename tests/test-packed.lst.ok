@@ -73,7 +73,7 @@ L4    = 000001 G         N12LEN= 000002           P1LEN = 000001           U125L
 L5    = 000005           N1LEN = 000001           U0    = 000000           U12LEN= 000002           
 
 
-Program sections:
+Program sections
 
 . ABS.  000000    000   (RW,I,GBL,ABS,OVR,NOSAV)
         000056    001   (RW,I,LCL,REL,CON,NOSAV)

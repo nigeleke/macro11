@@ -36,7 +36,7 @@ Symbol table
 .       000325R      001 LABEL   000000R      001 LABEL2  000154R      001 
 
 
-Program sections:
+Program sections
 
 . ABS.  000000    000   (RW,I,GBL,ABS,OVR,NOSAV)
         000325    001   (RW,I,LCL,REL,CON,NOSAV)

@@ -41,7 +41,7 @@ Symbol table
 .       000030R      001 CHR1  = 000001           CHR2  = 000002           CHR3  = 000003           
 
 
-Program sections:
+Program sections
 
 . ABS.  000000    000   (RW,I,GBL,ABS,OVR,NOSAV)
         000030    001   (RW,I,LCL,REL,CON,NOSAV)

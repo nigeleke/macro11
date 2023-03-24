@@ -28,7 +28,7 @@ Symbol table
 .       000051R      001 
 
 
-Program sections:
+Program sections
 
 . ABS.  000000    000   (RW,I,GBL,ABS,OVR,NOSAV)
         000051    001   (RW,I,LCL,REL,CON,NOSAV)

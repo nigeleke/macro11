@@ -297,7 +297,7 @@ Symbol table
 .       000656R      001 AC1   =%000001           AC5   =%000005           
 
 
-Program sections:
+Program sections
 
 . ABS.  000000    000   (RW,I,GBL,ABS,OVR,NOSAV)
         000656    001   (RW,I,LCL,REL,CON,NOSAV)

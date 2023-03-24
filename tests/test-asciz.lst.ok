@@ -37,9 +37,9 @@ test-asciz.mac:18: ***ERROR Complex expression cannot be assigned to a symbol
 test-asciz.mac:19: ***ERROR Complex expression cannot be assigned to a symbol
       19                                        .asciz =###=                    ; syntax error: assignment
       20 000075    000                  	.even
-      21                                        .asciz :SOH:                    ; colon makes it look like two labels
+      21 000076                                 .asciz :SOH:                    ; colon makes it look like two labels
 test-asciz.mac:22: ***ERROR Invalid expression in .WORD
-      22                                        .asciz :###:                    ; syntax error: bad label
+      22 000076                                 .asciz :###:                    ; syntax error: bad label
       23 000076    043     043     043          .asciz ^###^                    ; previous versions of this macro11
          000101    000                  
       24                                	; used ^/.../ quoting as an extension; however this should be ^...^.
@@ -51,7 +51,7 @@ Symbol table
 .       000102R      001 .ASCIZ  000076R      001 CR    = 000015           LF    = 000012           SOH     000076R      001 
 
 
-Program sections:
+Program sections
 
 . ABS.  000000    000   (RW,I,GBL,ABS,OVR,NOSAV)
         000102    001   (RW,I,LCL,REL,CON,NOSAV)
