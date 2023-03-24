@@ -77,17 +77,17 @@ void            list_flush(
 
 /* TODO: Implement report_err() & report_warn() & report_fatal() */
 
-//#define         report_err   report
-//#define         report_warn  report
-//#define         report_fatal report
+#define         report_err   report
+#define         report_warn  report
+#define         report_fatal report
 
 #define         REPORT_WARNING  1  /* Will [optionally] be displayed on pass 2 (and pass 1 if -yl1*2) */
 #define         REPORT_ERROR    2  /* Will be displayed on pass 2 (and pass 1 if -yl1*2) */
 #define         REPORT_FATAL    3  /* Will be displayed on pass 1 and pass 2 */
 
-#define         report_err(str, fmt, ...)   report(str, fmt, __VA_ARGS__)
-#define         report_warn(str, fmt, ...)  report(str, fmt, __VA_ARGS__)
-#define         report_fatal(str, fmt, ...) report(str, fmt, __VA_ARGS__)
+/* #define         report_err(str, fmt, ...)   report(str, fmt, __VA_ARGS__) */
+/* #define         report_warn(str, fmt, ...)  report(str, fmt, __VA_ARGS__) */
+/* #define         report_fatal(str, fmt, ...) report(str, fmt, __VA_ARGS__) */
 
 void            report(
     STREAM *str,
