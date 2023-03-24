@@ -29,6 +29,7 @@ TESTS="test-asciz \
     test-opcodes \
     test-operands \
     test-packed \
+    test-prec \
     test-psect \
     test-rad50 \
     test-radix \
@@ -39,9 +40,6 @@ TESTS="test-asciz \
     test-ua-pl \
     test-undef \
     test-word-comma"
-
-# Temporarily disabled:
-#    test-prec
 
 status=0
 
