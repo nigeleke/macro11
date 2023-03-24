@@ -577,6 +577,8 @@ do_mcalled_macro:
 
                     list_line_act |= LIST_PAGE_BEFORE;  /* Special case for .PAGE in case of error */
 
+                    /* FALL THROUGH */
+
                 case P_ASECT:
                 case P_ENDC:
                 case P_ENDR:    /* Undocumented: in MACRO-11 .ENDR is a synonym for .ENDM */
@@ -613,6 +615,8 @@ do_mcalled_macro:
                     if (*cp == ';')  /* Documented behaviour */
                         break;
 
+                    /* FALL THROUGH */
+
                 case P_IDENT:        /* Note that MACRO-11 uppercases the first character (bug) */
                 case P_INCLUDE:
                 case P_LIBRARY:
@@ -620,6 +624,8 @@ do_mcalled_macro:
 
                     if (!STRINGENT && *cp == ';')
                         break;       /* We will treat ';' as an error (below) if -stringent */
+
+                    /* FALL THROUGH */
 
                 case P_IRP:
                 case P_IRPC:
@@ -824,6 +830,8 @@ do_mcalled_macro:
 
                 case P_ERROR:
                     report_err(stack->top, "%.*s\n", strcspn(cp, "\n"), cp);
+
+                    /* FALL THROUGH */
 
                 case P_PRINT:
                     if (!EOL(*cp)) {
@@ -1737,6 +1745,7 @@ do_mcalled_macro:
                         return 1;
 
                     /* Fall through to P_GLOBL (.[NO]CROSS can both create global undefined symbols) */
+                    /* FALL THROUGH */
 
                 case P_GLOBL:
                 case P_WEAK:
