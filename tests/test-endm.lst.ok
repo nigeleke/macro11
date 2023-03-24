@@ -93,7 +93,7 @@ Symbol table
 .       000020R      001 M8    = ****** GX        
 
 
-Program sections:
+Program sections
 
 . ABS.  000000    000   (RW,I,GBL,ABS,OVR,NOSAV)
         000020    001   (RW,I,LCL,REL,CON,NOSAV)

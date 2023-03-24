@@ -422,5 +422,4 @@ ct.pc	=	ct.com!ct.smc!ct.pcx!ct.num!ct.alp
 	.endm	ct.mne
 
 
-        ; Comment out .end because that ends assembly...
-	; .end
+	.end
