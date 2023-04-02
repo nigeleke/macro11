@@ -283,17 +283,20 @@ O    75                                         .endc
         case P_IFTF:
             if (suppressed == 1)       /* Reduce suppression from 1 to 0. */
                 suppressed = 0;
+// TODO     list_value(stack->top, 1 - suppressed);
             break;
         case P_IFF:
             if (suppressed == 1) {     /* Can reduce suppression from 1 to 0. */
                 if (!conds[last_cond].ok)
                     suppressed = 0;
+// TODO     list_value(stack->top, 1 - suppressed);
             }
             break;
         case P_IFT:
             if (suppressed == 1) {     /* Can reduce suppression from 1 to 0. */
                 if (conds[last_cond].ok)
                     suppressed = 0;
+// TODO     list_value(stack->top, 1 - suppressed);
             }
             break;
         case P_ENDC:
@@ -724,26 +727,6 @@ do_mcalled_macro:
                         }
                     }  /* END-OF-DEBUGGING-STUFF */
 
-                    return 1;
-
-                case P_LIST:
-                    if (pass > 0) {
-                        if (EOL(*cp)) {
-                            list_level++;
-                            return 1;
-                        }
-                    }
-                    return 1;          /* Accepted, ignored.  (An obvious
-                                        * need: get assembly listing
-                                        * controls working fully. ) */
-
-                case P_NLIST:
-                    if (pass > 0) {
-                        if (EOL(*cp)) {
-                            list_level--;
-                            return 1;
-                        }
-                    }
                     return 1;
 
                 case P_IDENT:
@@ -1192,15 +1175,94 @@ do_mcalled_macro:
                         return reptstr != NULL;
                     }
 
-                case P_ENABL:
-                    /* TODO: Add all the rest of the options. */
+                case P_LIST:
+                case P_NLIST:
+                    if (!pass)
+                        return 1;  /* Ignore on pass 1 */
+
+                    if (EOL(*cp)) {
+                        list_level += (op->value == P_LIST ? 1 : -1);
+// TODO                 list_value(stack->top, list_level);
+                        return 1;
+                    }
+
                     while (!EOL(*cp)) {
+                        int argnum;
+
                         label = get_symbol(cp, &cp, NULL);
+                        if (!label) {
+                            report_err(stack->top, "Missing %s option\n", op->label);
+                            return 0;
+                        }
+
+                        if (strlen(label) > 3)
+                            argnum = -1;
+                        else
+                            argnum = lookup_list_arg(label);
+
+                        if (argnum < 0) {
+                            report_warn(stack->top, "Invalid %s option '%s' [ignored]\n", op->label, label);
+                            free(label);
+                            cp = skipdelim(cp);
+                            continue;
+                        }
+
+                        if (list_arg[argnum].defval < 0)
+                            report_warn(stack->top, "Unsupported %s option '%s'\n", op->label, label);
+
+                        list_arg[argnum].curval = (op->value == P_LIST) ? 1 : 0;
+
+                        /* TODO: Clean up (see enable_tf() in macro11.c) */
+
+                        if (strcmp(label, "BEX") == 0)
+                            list_bex = (op->value == P_LIST) ? 1 : 0;
+                        else if (strcmp(label, "MD") == 0) {
+                            list_md  = (op->value == P_LIST) ? 1 : 0;
+                        } else if (strcmp(label, "ME") == 0) {
+                            list_me  = (op->value == P_LIST) ? 1 : 0;
+                        }
+                        free(label);
+                        cp = skipdelim(cp);
+                    }
+                    return 1;
+
+                case P_ENABL:
+                    while (!EOL(*cp)) {
+                        int argnum;
+
+                        label = get_symbol(cp, &cp, NULL);
+                        if (!label) {
+                            report_err(stack->top, "Missing %s option\n", op->label);
+                            return 0;
+                        }
+
+                        if (strlen(label) > 3)
+                            argnum = -1;
+                        else
+                            argnum = lookup_enabl_arg(label);
+
+                        if (argnum < 0) {
+                            report_warn(stack->top, "Invalid %s option '%s' [ignored]\n", op->label, label);
+                            free(label);
+                            cp = skipdelim(cp);
+                            continue;
+                        }
+
+                        if (enabl_arg[argnum].defval < 0)
+                            report_warn(stack->top, "Unsupported %s option '%s'\n", op->label, label);
+
+                        enabl_arg[argnum].curval = (op->value == P_ENABL) ? 1 : 0;
+
+                        if (argnum == E_LSB)
+                            lsb = get_next_lsb();
+
+                        /* TODO: Clean up (see enable_tf() in macro11.c) */
+
                         if (strcmp(label, "AMA") == 0)
                             enabl_ama = 1;
                         else if (strcmp(label, "LSB") == 0) {
                             enabl_lsb = 1;
-                            lsb = get_next_lsb();
+                        /*  lsb = get_next_lsb();  */
                         } else if (strcmp(label, "GBL") == 0) {
                             enabl_gbl = 1;
                         } else if (strcmp(label, "LC") == 0) {
@@ -1216,13 +1278,42 @@ do_mcalled_macro:
                     return 1;
 
                 case P_DSABL:
-                    /* TODO: Ditto as for .ENABL */
+                    /* TODO: Merge P_DSABL and P_ENABL */
                     while (!EOL(*cp)) {
+                        int argnum;
+
                         label = get_symbol(cp, &cp, NULL);
+                        if (!label) {
+                            report_warn(stack->top, "Missing %s option\n", op->label);
+                            return 0;
+                        }
+
+                        if (strlen(label) > 3)
+                            argnum = -1;
+                        else
+                            argnum = lookup_enabl_arg(label);
+
+                        if (argnum < 0) {
+                            report_err(stack->top, "Invalid %s option '%s' [ignored]\n", op->label, label);
+                            free(label);
+                            cp = skipdelim(cp);
+                            continue;
+                        }
+
+                        if (enabl_arg[argnum].defval < 0)
+                            report_warn(stack->top, "Unsupported %s option '%s'\n", op->label, label);
+
+                        enabl_arg[argnum].curval = (op->value == P_ENABL) ? 1 : 0;
+
+                        if (argnum == E_LSB)
+                            lsb = get_next_lsb();
+
+                        /* TODO: Clean up (see enable_tf() in macro11.c) */
+
                         if (strcmp(label, "AMA") == 0)
                             enabl_ama = 0;
                         else if (strcmp(label, "LSB") == 0) {
-                            lsb = get_next_lsb();
+                        /*  lsb = get_next_lsb();  */
                             enabl_lsb = 0;
                         } else if (strcmp(label, "GBL") == 0) {
                             enabl_gbl = 0;
@@ -1323,7 +1414,7 @@ do_mcalled_macro:
                         do
                             cp = stack->top->vtbl->getline(stack->top);
                         while (cp != NULL);
-                        list_line_act &= ~LIST_PAGE_BEFORE;  /* Suppress the EOF page throw */
+                        list_line_act &= ~(LIST_PAGE_BEFORE | LIST_SUPPRESS_LINE);  /* Suppress the EOF page throw */
 
                         /* If not -strict we only flush the current .INCLUDE etc. */
 
@@ -1340,15 +1431,15 @@ do_mcalled_macro:
                         do
                             cp = stack_getline(stack);
                         while (cp != NULL);
-                        list_line_act &= ~LIST_PAGE_BEFORE;  /* Suppress the EOF page throw */
+                        list_line_act &= ~(LIST_PAGE_BEFORE | LIST_SUPPRESS_LINE);  /* Suppress the EOF page throw */
                         return retval;
                     }
 
                 case P_IFXX:  /* .IFxx where xx=DF NDF Z EQ NZ NE L LT G GT LE GE */
                     opcp = skipwhite(opcp);
-                    cp = opcp + 3;     /* Point cp at the "DF" or
-                                          "NDF" part etc. */
+                    cp = opcp + 3;     /* Point cp at the "DF" or "NDF" part etc. */
                     /* FALLS THROUGH */
+
                 case P_IIF:
                 case P_IF:
                     {
@@ -1528,9 +1619,9 @@ do_mcalled_macro:
                         report_err(stack->top, "No conditional block active\n");
                         return 0;
                     }
-                    if (conds[last_cond].ok)    /* Suppress if last cond
-                                                   is true */
+                    if (conds[last_cond].ok)    /* Suppress if last cond is true */
                         suppressed++;
+// TODO             list_value(stack->top, 1 - suppressed);
                     return 1;
 
                 case P_IFT:
@@ -1538,9 +1629,9 @@ do_mcalled_macro:
                         report_err(stack->top, "No conditional block active\n");
                         return 0;
                     }
-                    if (!conds[last_cond].ok)   /* Suppress if last cond
-                                                   is false */
+                    if (!conds[last_cond].ok)   /* Suppress if last cond is false */
                         suppressed++;
+// TODO             list_value(stack->top, 1 - suppressed);
                     return 1;
 
                 case P_IFTF:
@@ -1548,6 +1639,7 @@ do_mcalled_macro:
                         report_err(stack->top, "No conditional block active\n");
                         return 0;
                     }
+// TODO             list_value(stack->top, 1 - suppressed);
                     return 1;           /* Don't suppress. */
 
                 case P_ENDC:
@@ -1555,7 +1647,6 @@ do_mcalled_macro:
                         report_err(stack->top, "No conditional block active\n");
                         return 0;
                     }
-
                     pop_cond(last_cond - 1);
                     return 1;
 

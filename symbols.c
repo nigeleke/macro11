@@ -15,9 +15,12 @@
 /* GLOBALS */
 int             symbol_len = SYMMAX_DEFAULT;    /* max. len of symbols. default = 6 */
 int             symbol_allow_underscores = 0;   /* allow "_" in symbol names */
+int             symbol_list_locals = 0;         /* list local symbols in the symbol table */
+
+DIRARG          enabl_arg[E__LAST];             /* .ENABL arguments */
+DIRARG          list_arg[L__LAST];              /* .LIST  arguments */
 
 SYMBOL         *reg_sym[9];     /* Keep the register symbols in a handy array */
-
 
 SYMBOL_TABLE    system_st;      /* System symbols (Instructions,
                                    pseudo-ops, registers) */
@@ -396,6 +399,135 @@ SYMBOL         *add_sym(
 
     return sym;
 }
+
+
+/* add_dirarg adds a directive argument for .ENABL/.DSABL and .LIST/.NLIST */
+
+void add_dirarg(
+    DIRARG *arg,
+    char   *name,
+    int     def)
+{
+    arg->name[0] = name[0];
+    arg->name[1] = name[1];
+    arg->name[2] = name[2];  /* There are always at least two characters in the arg name */
+    arg->name[3] = '\0';
+    arg->curval  = -1;       /* Filled in by load_dirargs() */
+    arg->defval  = def;
+}
+
+
+/* add_dirargs adds all directive arguments  */
+
+void add_dirargs(
+    void)
+{
+
+#define ADD_ENABL_ARG(arg, def) add_dirarg(&enabl_arg[E_##arg], #arg, def)
+#define  ADD_LIST_ARG(arg, def) add_dirarg( &list_arg[L_##arg], #arg, def)
+
+    ADD_ENABL_ARG(res, -1);  /* Unused (reserved) */
+    ADD_ENABL_ARG(ABS,  0);
+    ADD_ENABL_ARG(AMA,  0);
+    ADD_ENABL_ARG(CDR,  0);
+    ADD_ENABL_ARG(CRF,  1);
+    ADD_ENABL_ARG(FPT,  0);
+    ADD_ENABL_ARG(GBL,  1);
+    ADD_ENABL_ARG(LC,   1);
+    ADD_ENABL_ARG(LCM,  0);
+    ADD_ENABL_ARG(LSB,  0);
+    ADD_ENABL_ARG(MCL,  0);
+    ADD_ENABL_ARG(PIC, -1);  /* m11 extension */
+    ADD_ENABL_ARG(PNC,  1);
+    ADD_ENABL_ARG(REG,  1);
+
+    ADD_LIST_ARG(lev,  1);  /* Listing level */
+    ADD_LIST_ARG(BEX,  1);
+    ADD_LIST_ARG(BIN,  1);
+    ADD_LIST_ARG(CND,  1);
+    ADD_LIST_ARG(COM,  1);
+    ADD_LIST_ARG(HEX,  0);
+    ADD_LIST_ARG(LOC,  1);
+    ADD_LIST_ARG(MC,   1);
+    ADD_LIST_ARG(MD,   1);
+    ADD_LIST_ARG(ME,   0);
+    ADD_LIST_ARG(MEB,  0);
+    ADD_LIST_ARG(SEQ,  1);
+    ADD_LIST_ARG(SRC,  1);
+    ADD_LIST_ARG(SYM,  1);
+    ADD_LIST_ARG(TOC,  1);
+    ADD_LIST_ARG(TTM,  0);
+
+#undef ADD_ENABL_ARG
+#undef ADD_LIST_ARG
+
+}
+
+
+/* load_dirargs loads the default directive arguments into the current values */
+
+void load_dirargs(
+    void)
+{
+    int i;
+
+    for (i = 0; i < E__LAST; i++)
+        enabl_arg[i].curval = enabl_arg[i].defval;
+
+    for (i = 0; i < L__LAST; i++)
+        list_arg[i].curval  = list_arg[i].defval;
+}
+
+
+/* show_dirargs shows the current values of directive arguments (for debugging) */
+
+void show_dirargs(
+    const char *prefix)
+{
+    int i;
+
+    fprintf(stderr, "%s.ENABL", (prefix == NULL) ? "" : prefix);
+    for (i = 0; i < E__LAST; i++)
+        fprintf(stderr, " %3.3s=%-2d", enabl_arg[i].name, enabl_arg[i].curval);
+
+    fprintf(stderr, "\n%s.LIST ", (prefix == NULL) ? "" : prefix);
+    for (i = 0; i < L__LAST; i++)
+        fprintf(stderr, " %3.3s=%-2d", list_arg[i].name, list_arg[i].curval);
+    fprintf(stderr, "\n");
+}
+
+
+/* lookup_enabl_arg finds the enum of a .ENABL or .DSABL directive */
+
+int lookup_enabl_arg(
+    const char argnam[4])
+{
+    int i;
+
+    for (i = 0; i < E__LAST; i++)
+        if (enabl_arg[i].name[0] == argnam[0] &&
+            enabl_arg[i].name[1] == argnam[1] &&
+            enabl_arg[i].name[2] == argnam[2])
+            return i;
+    return -1;
+}
+
+
+/* lookup_LIST_arg finds the enum of a .LIST or .NLIST directive */
+
+int lookup_list_arg(
+    const char argnam[4])
+{
+    int i;
+
+    for (i = 0; i < L__LAST; i++)
+        if (list_arg[i].name[0] == argnam[0] &&
+            list_arg[i].name[1] == argnam[1] &&
+            list_arg[i].name[2] == argnam[2])
+            return i;
+    return -1;
+}
+
 
 /* add_symbols adds all the internal symbols. */
 
@@ -846,7 +978,7 @@ static int rad50cmp(
     return c1 - c2;
 }
 
-#define rad50cmp strcmp  // Uncomment this line to disable sorting in RADIX50 order
+/* #define rad50cmp strcmp  // Uncomment this line to disable sorting in RADIX50 order */
 
 int symbol_compar(
     const void *a,
@@ -861,109 +993,111 @@ int symbol_compar(
 void list_symbol_table(
     void)
 {
-    SYMBOL_ITER iter;
-    SYMBOL *sym;
-    int skip_locals = 0;
-    int longest_symbol = 6;
-    int nsyms = 0;
-
-    fprintf(lstfile,"\n\nSymbol table\n\n");
+    SYMBOL_ITER     iter;
+    SYMBOL         *sym;
+    int             longest_symbol = 6;
+    int             nsyms = 0;
 
     /* Count the symbols in the table */
     for (sym = first_sym(&symbol_st, &iter); sym != NULL; sym = next_sym(&symbol_st, &iter)) {
-        if (skip_locals && sym->flags & SYMBOLFLAG_LOCAL) {
-            continue;
+        int             len;
+
+        check_sym_invariants(sym, __FILE__, __LINE__, NULL);
+        if (!symbol_list_locals) {
+            if (sym->flags & SYMBOLFLAG_LOCAL)
+                continue;
+            if (sym->label[0] == '.' && sym->label[1] == '\0')
+                continue;
         }
         nsyms++;
-        { /**/
-        int len = strlen(sym->label);
-
-        if (len > longest_symbol) {
+        len = strlen(sym->label);
+        if (len > longest_symbol)
             longest_symbol = len;
-        }
-        } /**/
     }
 
-    /* Sort them by name */
-    { /**/
-    { /**/
-    SYMBOL **symbols = malloc(nsyms * sizeof (SYMBOL *));
-    SYMBOL **symbolp = symbols;
+    /* Only list the symbol table if .LIST SYM */
+    if (LIST(SYM)) {
+        /* Sort the symbols by name */
+        if (nsyms) {
+            SYMBOL **symbols = memcheck(malloc(nsyms * sizeof (SYMBOL *)));
+            SYMBOL **symbolp = symbols;
 
-    for (sym = first_sym(&symbol_st, &iter); sym != NULL; sym = next_sym(&symbol_st, &iter)) {
-        if (skip_locals && sym->flags & SYMBOLFLAG_LOCAL) {
-            continue;
-        }
-        *symbolp++ = sym;
-    }
-
-    qsort(symbols, nsyms, sizeof(SYMBOL *), symbol_compar);
-
-    symbolp = symbols;
-
-    /* Print the listing in NCOLS columns. */
-    { /**/
-    int ncols = (132 / (longest_symbol + 19));
-    int nlines = (nsyms + ncols - 1) / ncols;
-    int line;
-    /*
-     * DIRER$  =%004562RGX    006
-     * ^        ^^     ^      ^-- for R symbols: program segment number
-     * |        ||     +-- Flags: R = relocatable
-     * |        ||                G = global
-     * |        ||                X = implicit global
-     * |        ||                L = local
-     * |        ||                W = weak
-     * |        |+- value, ****** for if it was not a definition
-     * |        +-- % for a register
-     * +- label name
-     */
-
-    for (line = 0; line < nlines; line++) {
-        int i;
-
-        for (i = line; i < nsyms; i += nlines) {
-            sym = symbols[i];
-            check_sym_invariants(sym, __FILE__, __LINE__, NULL);
-
-            fprintf(lstfile,"%-*s", longest_symbol, sym->label);
-            fprintf(lstfile,"%c", (sym->section->flags & PSECT_REL) ? ' ' : '=');
-            fprintf(lstfile,"%c", (sym->section->type == SECTION_REGISTER) ? '%' : ' ');
-            if (!(sym->flags & SYMBOLFLAG_DEFINITION)) {
-                fprintf(lstfile,"******");
-            } else {
-                fprintf(lstfile,"%06o", sym->value & 0177777);
+            for (sym = first_sym(&symbol_st, &iter); sym != NULL; sym = next_sym(&symbol_st, &iter)) {
+                if (!symbol_list_locals) {
+                    if (sym->flags & SYMBOLFLAG_LOCAL)
+                        continue;
+                    if (sym->label[0] == '.' && sym->label[1] == '\0')
+                        continue;
+                }
+                *symbolp++ = sym;
             }
-            fprintf(lstfile,"%c", (sym->section->flags & PSECT_REL) ? 'R' : ' ');
-            fprintf(lstfile,"%c", (sym->flags & SYMBOLFLAG_GLOBAL) ?  'G' : ' ');
-            fprintf(lstfile,"%c", (sym->flags & SYMBOLFLAG_IMPLICIT_GLOBAL) ? 'X' : ' ');
-            fprintf(lstfile,"%c", (sym->flags & SYMBOLFLAG_LOCAL) ?   'L' : ' ');
-            fprintf(lstfile,"%c", (sym->flags & SYMBOLFLAG_WEAK) ?    'W' : ' ');
-            if (sym->section->sector != 0) {
-                fprintf(lstfile,"  %03d ", sym->section->sector);
-            } else {
-                fprintf(lstfile,"      ");
+
+            qsort(symbols, nsyms, sizeof(SYMBOL *), symbol_compar);
+
+            symbolp = symbols;
+
+            fprintf(lstfile,"\n\nSymbol table\n\n");
+
+            /* Print the listing in NCOLS columns. */
+            {
+                int ncols = ((LIST(TTM) ? 80 : 132) / (longest_symbol + 19));
+                int nlines = (nsyms + ncols - 1) / ncols;
+                int line;
+                /*
+                 * DIRER$  =%004562RGX    006
+                 * ^        ^^     ^      ^-- for R symbols: program segment number
+                 * |        ||     +-- Flags: R = relocatable
+                 * |        ||                G = global
+                 * |        ||                X = implicit global
+                 * |        ||                L = local
+                 * |        ||                W = weak
+                 * |        |+- value, ****** for if it was not a definition
+                 * |        +-- % for a register
+                 * +- label name
+                 */
+
+                for (line = 0; line < nlines; line++) {
+                    int i;
+
+                    for (i = line; i < nsyms; i += nlines) {
+                        sym = symbols[i];
+                        fprintf(lstfile,"%-*s", longest_symbol, sym->label);
+                        fprintf(lstfile,"%c", (sym->section->flags & PSECT_REL) ? ' ' : '=');
+                        fprintf(lstfile,"%c", (sym->section->type == SECTION_REGISTER) ? '%' : ' ');
+                        if (!(sym->flags & SYMBOLFLAG_DEFINITION)) {
+                            fprintf(lstfile,"******");
+                        } else {
+                            fprintf(lstfile,"%06o", sym->value & 0177777);
+                        }
+                        fprintf(lstfile,"%c", (sym->section->flags & PSECT_REL) ? 'R' : ' ');
+                        fprintf(lstfile,"%c", (sym->flags & SYMBOLFLAG_GLOBAL) ?  'G' : ' ');
+                        fprintf(lstfile,"%c", (sym->flags & SYMBOLFLAG_IMPLICIT_GLOBAL) ? 'X' : ' ');
+                        fprintf(lstfile,"%c", (sym->flags & SYMBOLFLAG_LOCAL) ?   'L' : ' ');
+                        fprintf(lstfile,"%c", (sym->flags & SYMBOLFLAG_WEAK) ?    'W' : ' ');
+                        if (sym->section->sector != 0) {
+                            fprintf(lstfile,"  %03d ", sym->section->sector);
+                        } else {
+                            fprintf(lstfile,"      ");
+                        }
+                    }
+                    fprintf(lstfile,"\n");
+                }
+            }
+            free(symbols);
+        }
+
+        /* List sections */
+
+        fprintf(lstfile,"\n\nProgram sections" /* ":" */ "\n\n");
+
+        {
+            int i;
+
+            for (i = 0; i < sector; i++) {
+                list_section(sections[i]);
             }
         }
-        fprintf(lstfile,"\n");
     }
-    } /**/
-
-    /* List sections */
-
-    fprintf(lstfile,"\n\nProgram sections" /* ":" */ "\n\n");
-
-    { /**/
-    int i;
-
-    for (i = 0; i < sector; i++) {
-        list_section(sections[i]);
-    }
-    } /**/
-
-    free(symbols);
-    } /**/
-    } /**/
 }
 
 void list_section(
@@ -974,17 +1108,18 @@ void list_section(
         return;
     }
 
-    { /**/
-    int flags = sec->flags;
+    {
+        int flags = sec->flags;
 
-    fprintf(lstfile, "%-6s  %06o    %03d   ",
-        sec->label, sec->size & 0177777, sec->sector);
-    fprintf(lstfile, "(%s,%s,%s,%s,%s,%s)\n",
-        (flags & PSECT_RO)   ? "RO"  : "RW",
-        (flags & PSECT_DATA) ? "D"   : "I",
-        (flags & PSECT_GBL)  ? "GBL" : "LCL",
-        (flags & PSECT_REL)  ? "REL" : "ABS",
-        (flags & PSECT_COM)  ? "OVR" : "CON",
-        (flags & PSECT_SAV)  ? "SAV" : "NOSAV");
-    } /**/
+        fprintf(lstfile, "%-6s  %06o    %03d   ",
+                sec->label, sec->size & 0177777, sec->sector);
+
+        fprintf(lstfile, "(%s,%s,%s,%s,%s,%s)\n",
+               (flags & PSECT_RO)   ? "RO"  : "RW",
+               (flags & PSECT_DATA) ? "D"   : "I",
+               (flags & PSECT_GBL)  ? "GBL" : "LCL",
+               (flags & PSECT_REL)  ? "REL" : "ABS",
+               (flags & PSECT_COM)  ? "OVR" : "CON",
+               (flags & PSECT_SAV)  ? "SAV" : "NOSAV");
+    }
 }

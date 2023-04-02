@@ -1,6 +1,67 @@
 
 ----------- Mike Hill's entries ------------------
 
+28-Mar-2023: Mike Hill
+        Addition of .LIST/.NLIST & .ENABL/.DSABL & -e/-d command line options
+        - symbols.c
+          Do not display symbol table/psects if .NLIST SYM (-d SYM)
+          Implement .LIST TTM for symbol table (only)
+        - macro11.c
+          #include "parse.h" [we now use skipwhite() etc.]
+          Parse the options to -e and -d in enable_tf()
+            We now allow -e "AMA TTM" or -d AMA,TTM etc.
+        - assemble.c
+          Fixed bug when .ENABL/.DSABL parameter was not a valid label (e.g. .ENABL ?).
+          Added lookup_enabl_arg() to P_ENABL & P_DSABL
+          Moved P_LIST and P_NLIST to before P_ENABL and joined them together
+          Added lookup_list_arg() to P_LIST (and P_NLIST)
+          Implemented .[N]LIST BEX, MD, and ME (using previous variables)
+          List the list_level in the value field for empty .LIST or .NLIST (currently disabled)
+          List the suppressedness in the value field for .IFT .IFF .IFTF (currently disabled)
+        Changed version to 0.8.3 and date to 28-Mar-2023
+        - macro11.h
+
+27-Mar-2023: Mike Hill
+        Fixed "dangling else" and case "FALL THROUGH" GCC informationals found by Rhialto
+        - assemble.c
+          Added {} to 'if' and '/* FALL THROUGH */' comments
+        Fixed __VA_ARGS__ with no '...' args in GCC found by Rhialto
+        - listing.h
+          Changed #define report_* to ##__VA_ARGS__
+        Fixed the bug Rhialto found that I introduced with pagination (\f .MACRO X ; followed by a blank line)
+        - macros.c
+          Now flush the listing buffer BEFORE calling stack_getline()
+        - assemble.c
+          Suppress the LIST_SUPPRESS_LINE for .END (in case of '\f' before .END)
+        Added memcheck() to malloc()
+        - assemble_aux.c
+        - symbols.c
+        Added -ylls command line option (local symbols are no longer listed in the symbol table by default)
+        - macro11.c
+          Populate symbol_list_locals and update 'usage'
+        - symbols.h
+          Declare symbol_list_locals
+        - symbols.c
+          Define symbol_list_locals
+          Use symbol_list_locals instead of skip_locals in symbol_table()
+          Do not show the DOT symbol unless -ylls
+          Only sort and print the "Symbol Table" heading if there are symbols to list
+          Changed symbol_table() to check_sym_invariants() for all symbols during first scan of the symbol table
+          List the sections outside the symbol-sort block
+          Enable use of rad50cmp() to sort the symbol table etc.
+        Prepare for .ENABL/.DSABL and .LIST/.NLIST additions
+        - symbols.h
+          Add struct DIRARG and enums enabl_args & list_args and extern DIRARG for enabl & list
+          Add #define ENABL() and LIST() to get a current directive argument value
+          Declare add_dirargs() & load_dirargs() & show_dirargs()
+        - symbols.c
+          Define DIRARG for enabl & list
+          Add routines for add_dirargs() & load_dirargs() & show_dirargs()
+        - macro11.c
+          add_dirargs() before parsing the command line
+          load_dirargs() at the start of each pass
+          If -yd and/or -yl1 show_dirargs()
+
 21-Mar-2023: Mike Hill
         Fixed error message within macro call showing following lines
         - assemble.c

@@ -76,6 +76,8 @@ void read_body(
     STREAM          top_here = { NULL, NULL, 0, NULL };
     int             len = strlen(stack->top->name) + 1;
 
+    /* TODO: See P_REM in assemble.c -- use a new function in stream2.c for this */
+
     top_here.name = memcheck(malloc(len));
     memcpy(top_here.name, stack->top->name, len);
     top_here.line = stack->top->line;
@@ -90,6 +92,11 @@ void read_body(
         SYMBOL         *op;
         char           *nextline;
         char           *cp;
+
+        if (!(called & CALLED_NOLIST) &&
+                (list_level - 1 + list_md) > 0) {
+            list_flush();
+        }
  
         nextline = stack_getline(stack);  /* Now read the line */
         if (nextline == NULL) {        /* End of file. */
@@ -103,7 +110,6 @@ void read_body(
 
         if (!(called & CALLED_NOLIST) &&
                 (list_level - 1 + list_md) > 0) {
-            list_flush();
             list_source(stack->top, nextline);
         }
 

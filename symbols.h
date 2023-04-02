@@ -63,7 +63,53 @@ typedef struct symbol {
     struct symbol  *next;              /* Next symbol with the same hash value */
 } SYMBOL;
 
+/* Directive arguments */
 
+typedef struct dirarg {
+    char            name[4];            /* ASCII string xxx from   E_xxx or L_xxx */
+    int             curval;             /* Current .ENABL/.LIST value of E_xxx or L_xxx */
+    int             defval;             /* Default .ENABL/.LIST value of E_xxx or L_xxx */
+} DIRARG;
+
+
+enum enabl_args {
+    E_res,  /* Unused (reserved) */
+    E_ABS,
+    E_AMA,
+    E_CDR,
+    E_CRF,
+    E_FPT,
+    E_GBL,
+    E_LC,
+    E_LCM,
+    E_LSB,  /* Requires special processing when changed */
+    E_MCL,
+    E_PIC,  /* m11 extension */
+    E_PNC,
+    E_REG,
+    E__LAST
+};
+
+
+enum list_args {
+    L_lev,  /* Listing level */
+    L_BEX,  /* Subset of BIN */
+    L_BIN,
+    L_CND,
+    L_COM,  /* Subset of SRC */
+    L_HEX,
+    L_LOC,
+    L_MC,
+    L_MD,
+    L_ME,
+    L_MEB,
+    L_SEQ,
+    L_SRC,
+    L_SYM,
+    L_TOC,
+    L_TTM,
+    L__LAST
+};
 
 
 enum pseudo_ops {
@@ -360,10 +406,18 @@ typedef struct symbol_iter {
 } SYMBOL_ITER;
 
 
+#define ENABL(arg) enabl_arg[E_##arg].curval    /* Is the 'arg' enabled? */
+#define LIST(arg)   list_arg[L_##arg].curval    /* Is the 'arg' listing? */
+
+
 #ifndef SYMBOLS__C
 
 extern int      symbol_len;                /* max. len of symbols. default = 6 */
 extern int      symbol_allow_underscores;  /* allow "_" in symbol names */
+extern int      symbol_list_locals;        /* list local symbols in the symbol table */
+
+extern DIRARG   enabl_arg[E__LAST];        /* .ENABL arguments */
+extern DIRARG   list_arg[L__LAST];         /* .LIST  arguments */
 
 extern SYMBOL  *reg_sym[9];     /* Keep the register symbols in a handy array */
 
@@ -425,6 +479,21 @@ char           *symflags(
 void            add_table(
     SYMBOL *sym,
     SYMBOL_TABLE *table);
+
+void            add_dirargs(
+    void);
+
+void            load_dirargs(
+    void);
+
+void            show_dirargs(
+    const char *prefix);
+
+int             lookup_enabl_arg(
+    const char argnam[4]);
+
+int             lookup_list_arg(
+    const char argnam[4]);
 
 void            add_symbols(
     SECTION *current_section);

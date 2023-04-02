@@ -803,7 +803,7 @@ void write_psect_globals(
 
     /* Sort them by name */
     if (nsyms) {
-        SYMBOL      **symbolp = symbols = malloc(nsyms * sizeof (SYMBOL *));
+        SYMBOL      **symbolp = symbols = memcheck(malloc(nsyms * sizeof (SYMBOL *)));
 
         for (sym = first_sym(&symbol_st, &sym_iter); sym != NULL; sym = next_sym(&symbol_st, &sym_iter))
             if (sym->flags & SYMBOLFLAG_GLOBAL)

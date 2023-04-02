@@ -66,12 +66,49 @@ DAMAGE.
 #include "object.h"
 #include "rad50.h"
 #include "symbols.h"
+#include "parse.h"
 
 #ifdef WIN32
 #define strcasecmp stricmp 
 #if !__STDC__
 #define stricmp _stricmp
 #endif
+#endif
+
+#if 0
+
+/* lookup_enabl_arg finds the enum of a .ENABL or .DSABL directive */
+
+int lookup_enabl_arg(
+    const char argnam[4])
+{
+    int i;
+
+    for (i = 0; i < E__LAST; i++)
+        if (enabl_arg[i].name[0] == argnam[0] &&
+            enabl_arg[i].name[1] == argnam[1] &&
+            enabl_arg[i].name[2] == argnam[2])
+            return i;
+    return -1;
+}
+
+
+
+/* lookup_LIST_arg finds the enum of a .LIST or .NLIST directive */
+
+int lookup_list_arg(
+    const char argnam[4])
+{
+    int i;
+
+    for (i = 0; i < L__LAST; i++)
+        if (list_arg[i].name[0] == argnam[0] &&
+            list_arg[i].name[1] == argnam[1] &&
+            list_arg[i].name[2] == argnam[2])
+            return i;
+    return -1;
+}
+
 #endif
 
 /* enable_tf is called by command argument parsing to enable and
@@ -81,6 +118,48 @@ static void enable_tf(
     char *opt,
     int tf)
 {
+    char           *cp = opt;
+    char            argnam[4];
+    int             argnum;
+    int             i;
+
+    do {
+        if (cp == opt)
+            cp = skipwhite(cp);
+        else
+            cp = skipdelim(cp);
+
+        for (i = 0; i < 4; i++)
+            if (isupper((unsigned char) *cp))
+                argnam[i] = *cp++;
+            else
+               break;
+
+        if (i < 2 || i > 3) {
+           fprintf(stderr, "Invalid -%c option: %s\n", (tf) ? 'e' : 'd', (cp - i));
+           break;
+        }
+
+        argnam[i] = '\0';
+
+        argnum = lookup_enabl_arg(argnam);
+        if (argnum >= 0) {
+            enabl_arg[argnum].defval = tf;
+            continue;
+        }
+
+        argnum = lookup_list_arg(argnam);
+        if (argnum >= 0) {
+            list_arg[argnum].defval = tf;
+            continue;
+        }
+
+        fprintf(stderr, "Ignored -%c argument: '%s'\n", (tf) ? 'e' : 'd', argnam);
+    /*  break;  */
+    } while (*cp != '\0');
+
+    /* TODO: Replace all these with ENABL() or LIST() etc. */
+
     if (strcmp(opt, "AMA") == 0)
         opt_enabl_ama = tf;
     else if (strcmp(opt, "GBL") == 0)
@@ -140,7 +219,7 @@ static void print_help(
     printf("  macro11 [-o <file>] [-l {- | <file>}] \n");
     printf("          [-h] [-v] [-e <option>] [-d <option>]\n");
     printf("          [-rsx | -rt11] [-stringent | -strict | -relaxed]\n");
-    printf("          [-ysl <num>] [-yus] [-yl1] [-yd]\n");
+    printf("          [-ysl <num>] [-yus] [-ylls] [-yl1] [-yd]\n");
     printf("          [-I <directory>]\n");
     printf("          [-m <file>] [-p <directory>] [-x]\n");
     printf("          <inputfile> [<inputfile> ...]\n");
@@ -181,6 +260,7 @@ static void print_help(
     printf("-ysl       Syntax extension: change length of symbols from \n");
     printf("           default = %d to larger values, max = %d.\n", SYMMAX_DEFAULT, SYMMAX_MAX);
     printf("-yus       Syntax extension: allow underscore \"_\" in symbols.\n");
+    printf("-ylls      Extension: list local symbols in the symbol table.\n");
     printf("-yl1       Extension: list the first pass too, not only the second.\n");
 /*  printf("-yd        Extension: enable debugging.\n");  */
     printf("\n");
@@ -205,7 +285,7 @@ void prepare_pass(int this_pass, STACK *stack, int nr_files, char **fnames)
 {
     int i;
 
-    assert((this_pass                & ~1) == 0);  /* this_pass                == 0 or 1 */
+    assert((this_pass & ~1) == 0);  /* this_pass == 0 or 1 */
 
     stack_init(stack);
 
@@ -223,11 +303,18 @@ void prepare_pass(int this_pass, STACK *stack, int nr_files, char **fnames)
         stack_push(stack, str);
     }
 
+    if (enabl_debug && list_pass_0 && this_pass)
+        show_dirargs("End of pass 1: ");  /* Show the directive argunents at the end of pass 1 */
+
     if (enabl_debug || list_pass_0)
         fprintf(stderr, "******** Starting pass %d ********\n", this_pass+1);
 
     if (list_pass_0 && lstfile && lstfile != stdout)
         fprintf(lstfile, "******** Starting pass %d ********\n\n", this_pass+1);
+
+    load_dirargs();
+    if (enabl_debug && this_pass)
+        show_dirargs(NULL);  /* Show the directive argunents before starting pass 2 */
 
     DOT = 0;
     current_pc->section = &blank_section;
@@ -304,6 +391,8 @@ int main(
         print_help();
         return /* exit */ EXIT_FAILURE;
     }
+
+    add_dirargs();
 
     for (arg = 1; arg < argc; arg++) {
         if (*argv[arg] == '-') {
@@ -433,6 +522,8 @@ int main(
                 /* allow underscores */
                 symbol_allow_underscores = 1;
                 rad50_enable_underscore();
+            } else if (!strcasecmp(cp, "ylls")) {
+                symbol_list_locals = 1;
             } else if (!strcasecmp(cp, "yl1")) {
                 /* list the first pass, in addition to the second */
                 list_pass_0++;  /* Repeat -yl1 to also show report_xxx() errors during pass 1 */
