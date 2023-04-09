@@ -17,8 +17,7 @@ int             symbol_len = SYMMAX_DEFAULT;    /* max. len of symbols. default 
 int             symbol_allow_underscores = 0;   /* allow "_" in symbol names */
 int             symbol_list_locals = 0;         /* list local symbols in the symbol table */
 
-DIRARG          enabl_arg[E__LAST];             /* .ENABL arguments */
-DIRARG          list_arg[L__LAST];              /* .LIST  arguments */
+DIRARG          enabl_list_arg[ARGS__LAST];     /* .ENABL/.DSABL and .LIST/.NLIST arguments */
 
 SYMBOL         *reg_sym[9];     /* Keep the register symbols in a handy array */
 
@@ -403,10 +402,11 @@ SYMBOL         *add_sym(
 
 /* add_dirarg adds a directive argument for .ENABL/.DSABL and .LIST/.NLIST */
 
-void add_dirarg(
-    DIRARG *arg,
-    char   *name,
-    int     def)
+static void add_dirarg(
+    DIRARG     *arg,
+    const char *name,
+    int         def,
+    unsigned    flags)
 {
     arg->name[0] = name[0];
     arg->name[1] = name[1];
@@ -414,6 +414,7 @@ void add_dirarg(
     arg->name[3] = '\0';
     arg->curval  = -1;       /* Filled in by load_dirargs() */
     arg->defval  = def;
+    arg->flags   = flags;
 }
 
 
@@ -423,40 +424,41 @@ void add_dirargs(
     void)
 {
 
-#define ADD_ENABL_ARG(arg, def) add_dirarg(&enabl_arg[E_##arg], #arg, def)
-#define  ADD_LIST_ARG(arg, def) add_dirarg( &list_arg[L_##arg], #arg, def)
+#define ADD_ENABL_ARG(arg, def, flags) add_dirarg(&enabl_list_arg[E_##arg], #arg, def, ARGS_DSABL_ENABL | (flags))
+#define  ADD_LIST_ARG(arg, def, flags) add_dirarg(&enabl_list_arg[L_##arg], #arg, def, ARGS_NLIST_LIST  | (flags))
 
-    ADD_ENABL_ARG(res, -1);  /* Unused (reserved) */
-    ADD_ENABL_ARG(ABS,  0);
-    ADD_ENABL_ARG(AMA,  0);
-    ADD_ENABL_ARG(CDR,  0);
-    ADD_ENABL_ARG(CRF,  1);
-    ADD_ENABL_ARG(FPT,  0);
-    ADD_ENABL_ARG(GBL,  1);
-    ADD_ENABL_ARG(LC,   1);
-    ADD_ENABL_ARG(LCM,  0);
-    ADD_ENABL_ARG(LSB,  0);
-    ADD_ENABL_ARG(MCL,  0);
-    ADD_ENABL_ARG(PIC, -1);  /* m11 extension */
-    ADD_ENABL_ARG(PNC,  1);
-    ADD_ENABL_ARG(REG,  1);
+    /* TODO: Provide support for .DSABL PNC and .DSABL REG */
 
-    ADD_LIST_ARG(lev,  1);  /* Listing level */
-    ADD_LIST_ARG(BEX,  1);
-    ADD_LIST_ARG(BIN,  1);
-    ADD_LIST_ARG(CND,  1);
-    ADD_LIST_ARG(COM,  1);
-    ADD_LIST_ARG(HEX,  0);
-    ADD_LIST_ARG(LOC,  1);
-    ADD_LIST_ARG(MC,   1);
-    ADD_LIST_ARG(MD,   1);
-    ADD_LIST_ARG(ME,   0);
-    ADD_LIST_ARG(MEB,  0);
-    ADD_LIST_ARG(SEQ,  1);
-    ADD_LIST_ARG(SRC,  1);
-    ADD_LIST_ARG(SYM,  1);
-    ADD_LIST_ARG(TOC,  1);
-    ADD_LIST_ARG(TTM,  0);
+    ADD_ENABL_ARG(ABS, ARGS_DSABL, ARGS_NOT_IMPLEMENTED);  /* Output in .LDA format */
+    ADD_ENABL_ARG(AMA, ARGS_DSABL, ARGS_NO_FLAGS       );  /* Convert mode 67 (@ADDR) to 37 (@#ADDR) */
+    ADD_ENABL_ARG(CDR, ARGS_DSABL, ARGS_NOT_SUPPORTED  );  /* Card-reader format (ignore columns 73 onwards) */
+    ADD_ENABL_ARG(CRF, ARGS_ENABL, ARGS_NO_FUNCTION    );  /* Cross-reference output */
+    ADD_ENABL_ARG(FPT, ARGS_DSABL, ARGS_NO_FLAGS       );  /* Floating-point truncation */
+    ADD_ENABL_ARG(GBL, ARGS_ENABL, ARGS_NO_FLAGS       );  /* Undefined symbols are allowed and are global */
+    ADD_ENABL_ARG(LC,  ARGS_ENABL, ARGS_NO_FLAGS       );  /* Lower-case */
+    ADD_ENABL_ARG(LCM, ARGS_DSABL, ARGS_NO_FLAGS       );  /* .IF IDN/DIF are case-sensitive */
+    ADD_ENABL_ARG(LSB, ARGS_DSABL, ARGS_NO_FLAGS       );  /* Start a new local-symbol block */
+    ADD_ENABL_ARG(MCL, ARGS_DSABL, ARGS_NO_FLAGS       );  /* Lookup undefined op-codes in macro libraries */
+    ADD_ENABL_ARG(PIC, ARGS_DSABL, ARGS_NOT_SUPPORTED  );  /* Generate PIC code -- m11 extension */
+    ADD_ENABL_ARG(PNC, ARGS_ENABL, ARGS_NOT_IMPLEMENTED);  /* Generate binary code */
+    ADD_ENABL_ARG(REG, ARGS_ENABL, ARGS_NOT_IMPLEMENTED);  /* Use default register definitions */
+
+    ADD_LIST_ARG(LIS,          1,  ARGS_NO_FLAGS       );  /* Listing level */
+    ADD_LIST_ARG(BEX,  ARGS_LIST,  ARGS_NO_FLAGS       );  /* Binary values which don't fit on the listing line */
+    ADD_LIST_ARG(BIN,  ARGS_LIST,  ARGS_NO_FLAGS       );  /* Binary code -- SEQ,LOC,BIN,SRC = whole line */
+    ADD_LIST_ARG(CND,  ARGS_LIST,  ARGS_NO_FLAGS       );  /* Unsatisfied conditional coding */
+    ADD_LIST_ARG(COM,  ARGS_LIST,  ARGS_NO_FLAGS       );  /* Comments -- subset of SRC */
+    ADD_LIST_ARG(HEX,  ARGS_NLIST, ARGS_NO_FLAGS       );  /* Use HEX radix */
+    ADD_LIST_ARG(LOC,  ARGS_LIST,  ARGS_NO_FLAGS       );  /* Location counter -- SEQ,LOC,BIN,SRC = whole line */
+    ADD_LIST_ARG(MC,   ARGS_LIST,  ARGS_NO_FLAGS       );  /* Macro calls and repeat range expansions */
+    ADD_LIST_ARG(MD,   ARGS_LIST,  ARGS_NO_FLAGS       );  /* Macro definitions and repeat range [expansions] */
+    ADD_LIST_ARG(ME,   ARGS_NLIST, ARGS_NO_FLAGS       );  /* Macro expansions */
+    ADD_LIST_ARG(MEB,  ARGS_NLIST, ARGS_NO_FLAGS       );  /* Macro expansion binary code -- subset of ME */
+    ADD_LIST_ARG(SEQ,  ARGS_LIST,  ARGS_NO_FLAGS       );  /* Source line-number -- SEQ,LOC,BIN,SRC = whole line */
+    ADD_LIST_ARG(SRC,  ARGS_LIST,  ARGS_NO_FLAGS       );  /* Source line -- SEQ,LOC,BIN,SRC = whole line */
+    ADD_LIST_ARG(SYM,  ARGS_LIST,  ARGS_NO_FLAGS       );  /* Symbol table */
+    ADD_LIST_ARG(TOC,  ARGS_LIST,  ARGS_NO_FLAGS       );  /* Table of contents */
+    ADD_LIST_ARG(TTM,  ARGS_NLIST, ARGS_NO_FLAGS       );  /* Printer format (132 or 80 columns) */
 
 #undef ADD_ENABL_ARG
 #undef ADD_LIST_ARG
@@ -464,67 +466,106 @@ void add_dirargs(
 }
 
 
-/* load_dirargs loads the default directive arguments into the current values */
+/* load_dirargs loads the default directive argument values into the current values */
 
 void load_dirargs(
     void)
 {
     int i;
 
-    for (i = 0; i < E__LAST; i++)
-        enabl_arg[i].curval = enabl_arg[i].defval;
-
-    for (i = 0; i < L__LAST; i++)
-        list_arg[i].curval  = list_arg[i].defval;
+    for (i = 0; i < ARGS__LAST; i++)
+        enabl_list_arg[i].curval = enabl_list_arg[i].defval;
 }
 
 
-/* show_dirargs shows the current values of directive arguments (for debugging) */
+/* dump_dirargs dumps the current values of directive arguments (for debugging) */
 
-void show_dirargs(
+void dump_dirargs(
     const char *prefix)
 {
     int i;
 
+#define ARG_FLAGS(arg) (arg & ARGS_IGNORE_THIS    ) ? '#' : \
+                       (arg & ARGS_NO_FUNCTION    ) ? '.' : \
+                       (arg & ARGS_NOT_IMPLEMENTED) ? '-' : \
+                       (arg & ARGS_NOT_SUPPORTED  ) ? '*' : ' '
+
     fprintf(stderr, "%s.ENABL", (prefix == NULL) ? "" : prefix);
-    for (i = 0; i < E__LAST; i++)
-        fprintf(stderr, " %3.3s=%-2d", enabl_arg[i].name, enabl_arg[i].curval);
+    for (i = 0; i < ARGS__LAST; i++)
+        if (enabl_list_arg[i].flags & ARGS_DSABL_ENABL)
+            fprintf(stderr, " %c%3.3s=%-2d", ARG_FLAGS(enabl_list_arg[i].flags),
+                                             enabl_list_arg[i].name, enabl_list_arg[i].curval);
 
     fprintf(stderr, "\n%s.LIST ", (prefix == NULL) ? "" : prefix);
-    for (i = 0; i < L__LAST; i++)
-        fprintf(stderr, " %3.3s=%-2d", list_arg[i].name, list_arg[i].curval);
+    for (i = 0; i < ARGS__LAST; i++)
+        if (enabl_list_arg[i].flags & ARGS_NLIST_LIST)
+            fprintf(stderr, " %c%3.3s=%-2d", ARG_FLAGS(enabl_list_arg[i].flags),
+                                             enabl_list_arg[i].name, enabl_list_arg[i].curval);
     fprintf(stderr, "\n");
+
+#undef ARG_FLAGS
 }
 
 
-/* lookup_enabl_arg finds the enum of a .ENABL or .DSABL directive */
+/* usage_dirarg shows the usage for a single directive argument list */
 
-int lookup_enabl_arg(
-    const char argnam[4])
+static void usage_dirarg(
+    const char *prefix,
+    unsigned    type,
+    int         tf_value)
 {
+    int shown = 0;
     int i;
 
-    for (i = 0; i < E__LAST; i++)
-        if (enabl_arg[i].name[0] == argnam[0] &&
-            enabl_arg[i].name[1] == argnam[1] &&
-            enabl_arg[i].name[2] == argnam[2])
-            return i;
-    return -1;
+    /* Note that L_LIS does not use the flags and will not be shown here if < 1 or > 1
+     * This will only happen if '-h' is appended to a -e LIS or -d LIS,LIS etc. */
+    /* TODO: Fix this! */
+
+    for (i = 0; i < ARGS__LAST; i++) {
+       if (enabl_list_arg[i].flags & type) {
+           if ((!enabl_list_arg[i].defval) == (!tf_value)) {  
+               if ((enabl_list_arg[i].flags & ~ARGS_ALL_TYPES) == 0) {
+                    if (!shown) {
+                        shown = 1;
+                        fprintf(stderr, "   %s %s", prefix, enabl_list_arg[i].name);
+                    } else {
+                        fprintf(stderr, ",%s", enabl_list_arg[i].name);
+                    }
+                }
+            }
+        }
+    }
+    if (shown)
+        fprintf(stderr, "\n");
 }
 
 
-/* lookup_LIST_arg finds the enum of a .LIST or .NLIST directive */
+/* usage_dirargs shows the usage for -e and -d */
 
-int lookup_list_arg(
-    const char argnam[4])
+void usage_dirargs(
+    void)
+{
+    usage_dirarg("[.ENABL] -e", ARGS_DSABL_ENABL, ARGS_DSABL);
+    usage_dirarg("[.DSABL] -d", ARGS_DSABL_ENABL, ARGS_ENABL);
+    usage_dirarg("[.LIST ] -e", ARGS_NLIST_LIST,  ARGS_NLIST);
+    usage_dirarg("[.NLIST] -d", ARGS_NLIST_LIST,  ARGS_LIST);
+}
+
+
+/* lookup_arg finds the enum of a .ENABL or .DSABL directive */
+
+int lookup_arg(
+    const char argnam[4],
+    unsigned   type)
 {
     int i;
 
-    for (i = 0; i < L__LAST; i++)
-        if (list_arg[i].name[0] == argnam[0] &&
-            list_arg[i].name[1] == argnam[1] &&
-            list_arg[i].name[2] == argnam[2])
-            return i;
+    for (i = 0; i < ARGS__LAST; i++)
+        if (enabl_list_arg[i].flags & type)
+            if (enabl_list_arg[i].name[0] == argnam[0] &&
+                enabl_list_arg[i].name[1] == argnam[1] &&
+                enabl_list_arg[i].name[2] == argnam[2])
+                return i;
     return -1;
 }
 
@@ -1010,6 +1051,7 @@ void list_symbol_table(
                 continue;
         }
         nsyms++;
+
         len = strlen(sym->label);
         if (len > longest_symbol)
             longest_symbol = len;
@@ -1040,45 +1082,84 @@ void list_symbol_table(
 
             /* Print the listing in NCOLS columns. */
             {
-                int ncols = ((LIST(TTM) ? 80 : 132) / (longest_symbol + 19));
-                int nlines = (nsyms + ncols - 1) / ncols;
+                int ncols;
+                int nlines;
                 int line;
+
+                ncols = ((LIST(TTM) ? 80 : 132) / (longest_symbol + 19));
+                if (ncols == 0)
+                    ncols = 1;  /* Always fit at least one sym on a line */
+                nlines = (nsyms + ncols - 1) / ncols;
+
                 /*
-                 * DIRER$  =%004562RGX    006
-                 * ^        ^^     ^      ^-- for R symbols: program segment number
-                 * |        ||     +-- Flags: R = relocatable
-                 * |        ||                G = global
-                 * |        ||                X = implicit global
-                 * |        ||                L = local
-                 * |        ||                W = weak
-                 * |        |+- value, ****** for if it was not a definition
-                 * |        +-- % for a register
+                 * .NLIST HEX ->
+                 * DIRER$=%004562RGX   006.
+                 * ^      ^^     ^     ^-- for R symbols: program segment number (if > 1 segment with relocatables)
+                 * |      ||     +-- Flags: R = relocatable
+                 * |      ||                G = global
+                 * |      ||                X = implicit global
+                 * |      ||                L = local
+                 * |      ||                W = weak
+                 * |      |+- value, ****** for if it was not a definition
+                 * |      +-- % for a register
                  * +- label name
+                 *
+                 * .LIST HEX ->
+                 * LABEL1=%1234RGX    01....
                  */
 
                 for (line = 0; line < nlines; line++) {
-                    int i;
+                    int             i;
+                    int             format_num = (LIST(HEX) != 0);
+                    const char     *format3[2] = {  /* 3-digit numbers */
+                                        "  %03d",   /* .NLIST HEX */  /* TODO: Change to %03o (!) */
+                                        " %02X"     /* .LIST  HEX */
+                                    };
+                    int             length3[2] = {  /* Length of format3 */
+                                        5,          /* .NLIST HEX */
+                                        3           /* .LIST  HEX */
+                                    };
+                    const char     *format6[2] = {  /* 6-digit numbers */
+                                        "%06o",     /* .NLIST HEX */
+                                        "%04X"      /* .LIST  HEX */
+                                    };
+                    int             length6[2] = {  /* Length of format6 */
+                                        6,          /* .NLIST HEX */
+                                        4           /* .LIST  HEX */
+                                    };
+                    int             gap_len[2] = {  /* Length of gap after symbol */
+                                        1,          /* .NLIST HEX */
+                                        4           /* .LIST  HEX */
+                                    };
 
                     for (i = line; i < nsyms; i += nlines) {
                         sym = symbols[i];
-                        fprintf(lstfile,"%-*s", longest_symbol, sym->label);
-                        fprintf(lstfile,"%c", (sym->section->flags & PSECT_REL) ? ' ' : '=');
-                        fprintf(lstfile,"%c", (sym->section->type == SECTION_REGISTER) ? '%' : ' ');
+
+                        fprintf(lstfile, "%-*s", longest_symbol, sym->label);
+                        fprintf(lstfile, "%c", (sym->section->flags & PSECT_REL) ? ' ' : '=');
+                        fprintf(lstfile, "%c", (sym->section->type == SECTION_REGISTER) ? '%' : ' ');
+
                         if (!(sym->flags & SYMBOLFLAG_DEFINITION)) {
-                            fprintf(lstfile,"******");
+                            fprintf(lstfile, "%.*s", length6[format_num], "******");
                         } else {
-                            fprintf(lstfile,"%06o", sym->value & 0177777);
+                            fprintf(lstfile, format6[format_num], sym->value & 0177777);
                         }
-                        fprintf(lstfile,"%c", (sym->section->flags & PSECT_REL) ? 'R' : ' ');
-                        fprintf(lstfile,"%c", (sym->flags & SYMBOLFLAG_GLOBAL) ?  'G' : ' ');
-                        fprintf(lstfile,"%c", (sym->flags & SYMBOLFLAG_IMPLICIT_GLOBAL) ? 'X' : ' ');
-                        fprintf(lstfile,"%c", (sym->flags & SYMBOLFLAG_LOCAL) ?   'L' : ' ');
-                        fprintf(lstfile,"%c", (sym->flags & SYMBOLFLAG_WEAK) ?    'W' : ' ');
-                        if (sym->section->sector != 0) {
-                            fprintf(lstfile,"  %03d ", sym->section->sector);
+
+                        fprintf(lstfile, "%c", (sym->section->flags & PSECT_REL) ? 'R' : ' ');
+                        fprintf(lstfile, "%c", (sym->flags & SYMBOLFLAG_GLOBAL) ?  'G' : ' ');
+                        fprintf(lstfile, "%c", (sym->flags & SYMBOLFLAG_IMPLICIT_GLOBAL) ? 'X' : ' ');
+                        fprintf(lstfile, "%c", (sym->flags & SYMBOLFLAG_LOCAL) ?   'L' : ' ');
+                        fprintf(lstfile, "%c", (sym->flags & SYMBOLFLAG_WEAK) ?    'W' : ' ');
+
+                        if (sym->section->sector != 0 /* TODO: enable this -> && sym->section != &blank_section */) {
+                            fprintf(lstfile, format3[format_num], sym->section->sector);
                         } else {
-                            fprintf(lstfile,"      ");
+                        /*  if (i + nlines < nsyms)  // The right-hand edge lines up when commented out */
+                                fprintf(lstfile, "%.*s", length3[format_num], "      ");
                         }
+
+                    /*  if (i + nlines < nsyms) // TODO: enable this! */
+                            fprintf(lstfile, "%.*s", gap_len[format_num], "      ");
                     }
                     fprintf(lstfile,"\n");
                 }
@@ -1103,23 +1184,26 @@ void list_symbol_table(
 void list_section(
     SECTION *sec)
 {
+    int             flags      = sec->flags;
+    int             format_num = (LIST(HEX) != 0);
+    const char     *format[2]  = {
+                        "%-6s  %06o    %03d   ",    /* .NLIST HEX */  /* TODO: Change to %03o (!) */
+                        "%-6s  %04X    %02X      "  /* .LIST  HEX */
+                    };
+
     if (sec == NULL) {
-        fprintf(lstfile, "(null)\n");
+        fprintf(lstfile, "(null)\n");  /* Should never happen */
         return;
     }
 
-    {
-        int flags = sec->flags;
+    fprintf(lstfile, format[format_num],
+            sec->label, sec->size & 0177777, sec->sector);
 
-        fprintf(lstfile, "%-6s  %06o    %03d   ",
-                sec->label, sec->size & 0177777, sec->sector);
-
-        fprintf(lstfile, "(%s,%s,%s,%s,%s,%s)\n",
-               (flags & PSECT_RO)   ? "RO"  : "RW",
-               (flags & PSECT_DATA) ? "D"   : "I",
-               (flags & PSECT_GBL)  ? "GBL" : "LCL",
-               (flags & PSECT_REL)  ? "REL" : "ABS",
-               (flags & PSECT_COM)  ? "OVR" : "CON",
-               (flags & PSECT_SAV)  ? "SAV" : "NOSAV");
-    }
+    fprintf(lstfile, "(%s,%s,%s,%s,%s%s)\n",
+           (flags & PSECT_RO)   ?  "RO"  : "RW",
+           (flags & PSECT_DATA) ?  "D"   : "I",
+           (flags & PSECT_GBL)  ?  "GBL" : "LCL",
+           (flags & PSECT_REL)  ?  "REL" : "ABS",
+           (flags & PSECT_COM)  ?  "OVR" : "CON",
+           (flags & PSECT_SAV)  ? ",SAV" : /* TODO: enable -> (STRINGENT && !rt11) ? "" : */ ",NOSAV");
 }

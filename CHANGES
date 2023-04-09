@@ -1,6 +1,212 @@
 
 ----------- Mike Hill's entries ------------------
 
+04-Apr-2023: Mike Hill
+        Detect badly formed .MACROs
+        - macros.c
+          If -strict we now enable a previously disabled check in defmacro()
+        Join the two DIRARGs enabl_arg* & list_arg* into enabl_list_arg*
+        - symbols.h
+          Removed E_res and replaced E__LAST & L__LAST with ARGS__LAST
+          Changed ENABL() and LIST()
+          Replaced lookup_enabl_arg() and lookup_list_arg() with lookup_arg()
+        - symbols.c
+          As symbols.h
+          load_dirargs() only needs to update enabl_list_arg[]
+          dump_dirargs() now uses flags to determine the arg type
+          usage_dirarg*() only needs to scan enabl_list_arg[]
+          lookup_arg() replaces lookup_enabl_arg() and lookup_list_arg()
+        - listing.h
+          Changed #define list_level -to- enabl_list_arg[L_LIS].curval
+        - assemble.c
+          Use lookup_arg() and enabl_list_arg[] etc.
+          Join P_NLIST + P_LIST and P_DSABL + P_ENABL together
+        - macro11.c
+          Use lookup_arg() and enabl_list_arg[] etc.
+        Add the -dc command line option (like -d) to disable changes to directive arguments
+        - symbols.h
+          Add #define ARGS_IGNORE_THIS
+          Add #define ARGS_IGNORE()
+        - symbols.c
+          Updated dump_dirargs()
+        - assemble.c
+          Use ARGS_IGNORE()
+        - macro11.c
+          Added 'flags' to enable_tf()
+          Added "-dc" option and updated 'Usage'
+        Implement .NLIST CND
+        - symbols.c
+          Change the flags for L_CND
+        - assemble.c
+          Suppress the line if !LIST(CND) in P_IF etc.
+          For .IIF suppress the line (if FALSE) or reload the listing line (if TRUE)
+        Fix .NLIST MD
+        - assemble.c
+          Suppress the '.MACRO' line at P_MACRO
+        Implement .NLIST MC,ME,MEB
+        - symbols.c
+          Change the flags for MC,ME,MEB
+        - assemble.c
+          Suppress the listing line for macro calls if .NLIST MC
+        - listing.h
+          Declare list_within_exp
+        - listing.c
+          Add #include "macros.h" and #include "rept_irpc.h"
+          Define list_within_exp
+          list_source() sets list_within_exp if the source line came from a macro/rept/irp/irpc
+          list_process() now handles suppressing .NLIST ME,MEB
+        Ran test suite with command line options -e ME -d TOC -dc BEX,ME,MEB
+          And got the same results as 0.8.3 (from 28-Mar-2023)
+            Except ... test-packed ... because of .LIST HEX
+        Changed version date of 0.8.4 to 04-Apr-2023
+        - macro11.h
+
+03-Apr-2023: Mike Hill
+        Change debug level of LSB debug messages to 2
+        - assemble.c
+        - parse.c
+        Implement .SBTTL
+        - listing.h
+          Declare title_string[32] and toc_shown
+        - listing.c
+          Initialize title_string[32] and toc_shown
+        - macro11.h
+          Add #define PROGRAM_NAME "macro11"
+        - macro11.c
+          Use PROGRAM_NAME instead of "macro11"
+          Arrange for a page-throw if the TOC is shown
+        - assemble.c
+          Add #include <time.h> and #include "macro11.h"
+          Move P_TITLE to above P_SBTTL
+          P_TITLE: Acquire the title string
+          P_SBTTL: Output the TOC heading and .SBTTL
+        Further .LIST/.NLIST & .ENABL/.DSABL enhancements
+        - symbols.c
+          list_symbol_table()
+            Make sure that -ysl 64 works with .LIST TTM
+          list_section()
+            Removed ",NOSAV" if -stringent and -rsx [ TODO: enable it in list_symbol_table() ]
+        Add flags field to dirargs and changed show_dirargs() to dump_dirargs()
+        - symbols.h
+          Add the #define ARGS_* from symbols.c here
+        - symbols.c
+          Remove the #define ARGS_* here (they are in symbols.h now)
+          Changed how the flags are used
+        - macro11.c
+          Updated dirargs
+
+01-Apr-2023: Mike Hill
+        Further .LIST/.NLIST & .ENABL/.DSABL enhancements
+        - symbols.c
+          Changed flags for SEQ,LOC,BIN,HEX in add_dirargs() 
+        - listing.h
+          Changed LSTFORMAT (again)
+        - listing.c
+          Added #include <assert.h> and <ctype.h>
+          Changed uses of LSTFORMAT
+          Completed .LIST TTM
+          Added .NLIST SEQ,LOC,BIN
+        Added .LIST HEX
+        - listing.c
+          New routine - list_oct2hex()
+        - symbols.c
+          list_symbol_table()
+            Added printf formats for octal & hex
+            Miss off the trailing space on output lines [ TODO: enable it in list_symbol_table() ]
+          list_section()
+            Added printf formats for octal & hex
+            Removed ",NOSAV" if -stringent and -rsx (currently commented out)
+
+31-Mar-2023: Mike Hill
+        Further .LIST/.NLIST & .ENABL/.DSABL enhancements
+        - assemble.c
+          For -yd: show_dirargs() at the end of pass 2
+        - symbols.c
+          Changed flags for BEX in add_dirargs()
+        - listing.h
+          Changed LSTFORMAT
+        - listing.c
+          Added .[N]LIST BEX
+
+30-Mar-2023: Mike Hill
+        Symbol table with < 2 PSECTs which have relocatable symbols no longer shows section numbers
+        - symbols.c
+          Do not show the section number for the blank section (line MACRO-11)
+            Currently disabled to keep the test output consistent [ TODO: enable it in list_symbol_table() ]
+        Updated 'usage' for -e and -d
+        - symbols.h
+          Changed L_lev to L_LIS
+          Add usage_dirargs()
+        - symbols.c
+          Changed L_lev to L_LIS
+          load_dirargs() now copies the defval to curval for L_LIS
+          Add usage_dirarg() and usage_dirargs()
+          Updated ADD_LIST_ARG(BEX & ME)
+          Made add_dirarg() static etc.
+          show_dirargs() now ignores flags for L_LIS
+        - macro11.c
+          Move add_dirargs() to before call to print_help()
+          Removed old -e and -d options list
+          Call usage_dirargs() to show the new options list
+          enable_tf(): -e LIS increases list level, -d LIS decreases it all others now keep the flags intact
+        - assemble.c
+          P_LIST / P_NLIST now need to disable use of 'LIS'
+        Remove list_bex and list_me (initialized but never used)
+	- listing.h
+	- listing.c
+	- macro11.c
+	- assemble.c
+        Change list_level from an int to a reference to list_arg[L_LIS].curval = LIST(LIS)
+        - listing.h
+          #include "symbols.h"
+          Replace extern int list_level with #define
+        - listing.c
+          Remove int list_level
+        Change list_md to LIST(MD)
+	- listing.h   (remove list_md)
+	- listing.c   (ditto)
+	- macro11.c   (ditto)
+	- assemble.c  (ditto)
+        - macros.c    (replace)
+        - rept_irpc.c (replace)
+        Change enabl_xxx (xxx=ama,gbl,lc,lcm,lsb,mcl) to ENABL(xxx) and remove opt_enabl_ama
+        - assemble_globals.h (remove)
+        - assemble_globals.c (remove)
+        - assemble.c         (remove & replace)
+        - macro11.c          (remove)
+        - parse.c            (replace enabl_ama)
+        - assemble_aux.c     (replace enabl_gbl)
+        Further .LIST/.NLIST & .ENABL/.DSABL enhancements
+        - symbols.c
+          Add comments and change flags for various add_dirargs()
+        - parse.c
+          Only round floating-point if .DSABL FPT (default)
+        - assemble.c
+          P_SBTTL: only show TOC if .LIST TOC
+          P_REM: only list .REM contents if .LIST COM (default)
+        - listing.c
+          Add trunc() to truncate lines
+          Add list_process() to process lines before listing them
+            .NLIST SEQ,LOC,BIN,SRC suppresses all lines
+            .NLIST COM does not list lines starting with ';' or empty lines (unlike MACRO-11)
+            .NLIST SRC does not list lines which would only have a sequence number (also unlike MACRO-11)
+            The listing line will be truncated -- and suppressed if empty (TODO: .NLIST SEQ LOC BIN)
+            Note: all parts of lines with errors will always be listed
+
+29-Mar-2023: Mike Hill
+        Changed version to 0.8.4
+        - macro11.h
+        Added flags to DIR_ARGS defval (currently not exported in symbols.h)
+        - symbols.c
+          add_dirarg() #define some flags
+          add_dirargs() use those flags
+          load_dirargs() only copy bit 0 from defval to curval
+          show_dirargs() show the flags
+        - macro11.c
+          Removed commented-out copies of lookup_enabl_arg() and lookup_list_arg()
+        Never suppress listing lines on pass 1 for -yl1
+        - listing.c
+
 28-Mar-2023: Mike Hill
         Addition of .LIST/.NLIST & .ENABL/.DSABL & -e/-d command line options
         - symbols.c

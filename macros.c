@@ -1,10 +1,9 @@
-
 #define MACROS__C
 
 
 /*
- Dealing with MACROs
-*/
+ * Dealing with MACROs
+ */
 
 #include <stdlib.h>
 #include <string.h>
@@ -27,8 +26,8 @@
 
 
 /* macro_stream_delete is called when a macro expansion is
-   exhausted.  The unique behavior is to unwind any stacked
-   conditionals.  This allows a nested .MEXIT to work.  */
+ * exhausted.  The unique behavior is to unwind any stacked
+ * conditionals.  This allows a nested .MEXIT to work.  */
 
 void macro_stream_delete(
     STREAM *str)
@@ -49,7 +48,8 @@ STREAM         *new_macro_stream(
     MACRO *mac,
     int nargs)
 {
-    MACRO_STREAM   *mstr = memcheck(malloc(sizeof(MACRO_STREAM))); {
+    MACRO_STREAM   *mstr = memcheck(malloc(sizeof(MACRO_STREAM)));
+    {
         char           *name = memcheck(malloc(strlen(refstr->name) + 32));
 
         sprintf(name, "%s:%d->%s", refstr->name, refstr->line, mac->sym.label);
@@ -94,7 +94,7 @@ void read_body(
         char           *cp;
 
         if (!(called & CALLED_NOLIST) &&
-                (list_level - 1 + list_md) > 0) {
+                (list_level - 1 + LIST(MD)) > 0) {
             list_flush();
         }
  
@@ -109,7 +109,7 @@ void read_body(
         }
 
         if (!(called & CALLED_NOLIST) &&
-                (list_level - 1 + list_md) > 0) {
+                (list_level - 1 + LIST(MD)) > 0) {
             list_source(stack->top, nextline);
         }
 
@@ -253,15 +253,16 @@ MACRO          *defmacro(
         arg->label = get_symbol(cp, &cp, NULL);
         if (arg->label == NULL) {
             /* It turns out that I have code which is badly formatted
-               but which MACRO.SAV assembles.  Sigh.  */
-            /* So, just quit defining arguments. */
-            break;
+             * but which MACRO.SAV assembles.  Sigh.  */
+            if (STRICT) {
+                report_warn(stack->top, "Invalid .MACRO argument\n");
 #if 0
-            report_err(str, "Invalid .MACRO argument\n");
-            remove_sym(&mac->sym, &macro_st);
-            free_macro(mac);
-            return NULL;
+                remove_sym(&mac->sym, &macro_st);
+                free_macro(mac);
+                return NULL;
 #endif
+            }
+            break;  /* So, just quit defining arguments. */
         }
 
         cp = skipwhite(cp);
@@ -284,13 +285,14 @@ MACRO          *defmacro(
         cp = skipdelim(cp);
     }
 
-    /* Read the stream in until the end marker is hit */  {
+    /* Read the stream in until the end marker is hit */
+    {
         BUFFER         *gb;
         int             levelmod = 0;
 
         gb = new_buffer();
 
-        if ((called & CALLED_NOLIST) && !list_md) {
+        if ((called & CALLED_NOLIST) && !LIST(MD)) {
             list_level--;
             levelmod = 1;
         }

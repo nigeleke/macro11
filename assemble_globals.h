@@ -67,27 +67,30 @@ extern int      strictness;              /* How strict (relaxed) do we want to b
 #define RELAXED       (strictness <  0)  /* Relax the rules as much as we like */
 #define VERY_RELAXED  (strictness < -1)  /* Relax the rules so much that even .END isn't the end */
 
-extern int      opt_enabl_ama;  /* May be changed by command line */
+// TODO: Remove ...
+//
+// extern int      opt_enabl_ama;  /* May be changed by command line */
+//
+// extern int      enabl_ama;      /* When set, chooses absolute (037) versus
+//                                    PC-relative */
+//                                 /* (067) addressing mode */
+// extern int      enabl_lsb;      /* When set, stops non-local symbol
+//                                    definitions from delimiting local
+//                                    symbol sections. */
+//
+// extern int      enabl_gbl;      /* Implicit definition of global symbols */
+//
+// extern int      enabl_lc;       /* If lowercase disabled, convert assembler
+//                                    source to upper case. */
+// extern int      enabl_lcm;      /* If lowercase disabled, .IF IDN/DIF are
+//                                    case-sensitive. */
+//
+// extern int      enabl_mcl;      /* If MCALL of unknown symbols is enabled. */
 
-extern int      enabl_ama;      /* When set, chooses absolute (037) versus
-                                   PC-relative */
-                                /* (067) addressing mode */
-extern int      enabl_lsb;      /* When set, stops non-local symbol
-                                   definitions from delimiting local
-                                   symbol sections. */
-
-extern int      enabl_gbl;      /* Implicit definition of global symbols */
-
-extern int      enabl_lc;       /* If lowercase disabled, convert assembler
-                                   source to upper case. */
-extern int      enabl_lcm;      /* If lowercase disabled, .IF IDN/DIF are
-                                   case-sensitive. */
 extern int      suppressed;     /* Assembly suppressed by failed conditional */
 
 extern MLB     *mlbs[MAX_MLBS]; /* macro libraries specified on the command line */
 extern int      nr_mlbs;        /* Number of macro libraries */
-
-extern int      enabl_mcl;      /* If MCALL of unknown symbols is enabled. */
 
 extern COND     conds[MAX_CONDS];       /* Stack of recent conditions */
 extern int      last_cond;      /* 0 means no stacked cond. */

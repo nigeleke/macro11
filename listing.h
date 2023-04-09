@@ -2,48 +2,55 @@
 #define LISTING__H
 
 #include "stream2.h"
+#include "symbols.h"
 
 /*
     format of a listing line
     Interestingly, no instances of this struct are ever created.
     It lives to be a way to layout the format of a list line.
     I wonder if I should have bothered.
+    Of course you should ... you use offsetof()
 */
 
+/* 0123456789012345678901234567890123456789
+ * fssssss llllll  aaaaaaaabbbbbbbbcccccccc...
+ * ?   123 001000  012737  052100  000776  ... */
+
 typedef struct lstformat {
-    char            flag[2];         /* Error flags */
-    char            line_number[6];  /* Line number */
-    char            pc[8];           /* Location */
-    char            words[8][3];     /* three instruction words */
-    char            source[1];       /* source line */
+    char            flag[1];           /* Error flags            (ought to be [3]) */
+    char            line_number[6];    /* Line [sequence] number (ought to be [4]) */
+    char            gap_after_seq[1];  /* Space */
+    char            pc[6];             /* Location */
+    char            gap_after_pc[2];   /* Spaces */
+    char            words[3][8];       /* Up to three instruction words or bytes */
+    char            source[1];         /* Source line */
 } LSTFORMAT;
 
 
 /* GLOBAL VARIABLES */
 #ifndef  LISTING__C
-extern int      list_md;        /* option to list macro/rept definition = yes */
 
-extern int      list_me;        /* option to list macro/rept expansion = yes */
+extern char     title_string[32];  /* .TITLE string (up to 31 characters) */
+extern int      toc_shown;         /* Flags that at least one .SBTTL was listed in the TOC */
 
-extern int      list_bex;       /* option to show binary */
+extern char    *list_page_fmt;     /* Format to use for the page throw */
 
-extern int      list_level;     /* Listing control level.  .LIST
-                                   increments; .NLIST decrements */
+extern int      list_page_top;     /* Are we at the top of a page? */
 
-extern char    *list_page_fmt;  /* Format to use for the page throw */
+extern int      list_line_act;     /* Action to perform when listing the current line */
 
-extern int      list_page_top;  /* Are we at the top of a page? */
+extern int      list_within_exp;   /* Flag whether the listing line is DIRECTLY within a macro/rept/irp/irpc expansion */
 
-extern int      list_line_act;  /* Action to perform when listing the current line */
+extern FILE    *lstfile;           /* Listing file descriptor */
 
-extern FILE    *lstfile;        /* Listing file descriptor */
+extern int      list_pass_0;       /* Also list what happens during the first pass */
 
-extern int      list_pass_0;    /* Also list what happens during the first pass */
-
-extern int      report_errcnt;  /* Count the number of times report() has been called */
+extern int      report_errcnt;     /* Count the number of times report() has been called */
 
 #endif
 
+
+#define list_level enabl_list_arg[L_LIS].curval  /* = LIST(LIS) // Directly access the .[N]LIST 'LIS' current level (= value) */
 
 #define LIST_SUPPRESS_LINE  1   /* Suppress the line itself (e.g. '.PAGE') */
 #define LIST_PAGE_BEFORE    2   /* New page BEFORE listing the line */

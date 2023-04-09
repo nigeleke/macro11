@@ -3,11 +3,11 @@
 
 /* max symbol_len can be adjusted between SYMMAX_DEFAULT and SYMMAX_MAX*/
 #define SYMMAX_DEFAULT 6               /* I will honor this many character symbols */
-
-#define SYMMAX_MAX 64
+#define SYMMAX_MAX 64                  /* Up to a maximum of this many */
 
 
 /* Program sections: */
+
 typedef struct section {
     char           *label;      /* Section name */
     unsigned        type;       /* Section type */
@@ -66,14 +66,30 @@ typedef struct symbol {
 /* Directive arguments */
 
 typedef struct dirarg {
-    char            name[4];            /* ASCII string xxx from   E_xxx or L_xxx */
-    int             curval;             /* Current .ENABL/.LIST value of E_xxx or L_xxx */
-    int             defval;             /* Default .ENABL/.LIST value of E_xxx or L_xxx */
+    char            name[4];           /* ASCII string xxx from   E_xxx or L_xxx */
+    int             curval;            /* Current .ENABL/.LIST value of E_xxx or L_xxx */
+
+    int             defval;            /* Default .ENABL/.LIST value of E_xxx or L_xxx */
+#define ARGS_DSABL             0
+#define ARGS_NLIST             0
+#define ARGS_ENABL             1
+#define ARGS_LIST              1
+
+    unsigned        flags;             /* Directive-argument flags */
+#define ARGS_DSABL_ENABL       1
+#define ARGS_NLIST_LIST        2
+/* ...                                 // Reserve space for types = 4, 8, 16 */
+#define ARGS_ALL_TYPES        31
+
+#define ARGS_NO_FLAGS          0
+#define ARGS_IGNORE_THIS      32
+#define ARGS_NO_FUNCTION      64
+#define ARGS_NOT_IMPLEMENTED 128
+#define ARGS_NOT_SUPPORTED   256
 } DIRARG;
 
 
-enum enabl_args {
-    E_res,  /* Unused (reserved) */
+enum enabl_list_args {
     E_ABS,
     E_AMA,
     E_CDR,
@@ -87,12 +103,8 @@ enum enabl_args {
     E_PIC,  /* m11 extension */
     E_PNC,
     E_REG,
-    E__LAST
-};
 
-
-enum list_args {
-    L_lev,  /* Listing level */
+    L_LIS,  /* Listing level (special handling) */
     L_BEX,  /* Subset of BIN */
     L_BIN,
     L_CND,
@@ -108,7 +120,8 @@ enum list_args {
     L_SYM,
     L_TOC,
     L_TTM,
-    L__LAST
+
+    ARGS__LAST
 };
 
 
@@ -406,18 +419,17 @@ typedef struct symbol_iter {
 } SYMBOL_ITER;
 
 
-#define ENABL(arg) enabl_arg[E_##arg].curval    /* Is the 'arg' enabled? */
-#define LIST(arg)   list_arg[L_##arg].curval    /* Is the 'arg' listing? */
-
+#define ENABL(arg) enabl_list_arg[E_##arg].curval  /* Is the 'arg' enabled? */
+#define LIST(arg)  enabl_list_arg[L_##arg].curval  /* Is the 'arg' listing? */
+#define ARGS_IGNORE(arg) (enabl_list_arg[arg].flags & ARGS_IGNORE_THIS)
 
 #ifndef SYMBOLS__C
 
-extern int      symbol_len;                /* max. len of symbols. default = 6 */
-extern int      symbol_allow_underscores;  /* allow "_" in symbol names */
-extern int      symbol_list_locals;        /* list local symbols in the symbol table */
+extern int      symbol_len;                  /* max. len of symbols. default = 6 */
+extern int      symbol_allow_underscores;    /* allow "_" in symbol names */
+extern int      symbol_list_locals;          /* list local symbols in the symbol table */
 
-extern DIRARG   enabl_arg[E__LAST];        /* .ENABL arguments */
-extern DIRARG   list_arg[L__LAST];         /* .LIST  arguments */
+extern DIRARG   enabl_list_arg[ARGS__LAST];  /* .ENABL/.DSABL and .LIST/.NLIST arguments */
 
 extern SYMBOL  *reg_sym[9];     /* Keep the register symbols in a handy array */
 
@@ -486,14 +498,15 @@ void            add_dirargs(
 void            load_dirargs(
     void);
 
-void            show_dirargs(
+void            dump_dirargs(
     const char *prefix);
 
-int             lookup_enabl_arg(
-    const char argnam[4]);
+void usage_dirargs(
+    void);
 
-int             lookup_list_arg(
-    const char argnam[4]);
+int             lookup_arg(
+    const char argnam[4],
+    unsigned   type);
 
 void            add_symbols(
     SECTION *current_section);

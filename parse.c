@@ -388,7 +388,7 @@ int get_mode(
         mode->type |= MODE_OFFSET|MODE_PC;/* If so, then PC-relative is the only
                                           option */
         mode->pcrel = 1;               /* Note PC-relative */
-    } else if (enabl_ama) {            /* User asked for absolute adressing? */
+    } else if (ENABL(AMA)) {           /* User asked for absolute adressing? */
         mode->type |= MODE_INDIRECT|MODE_AUTO_INCR|MODE_PC;
                                        /* Give it to him. */
     } else {
@@ -903,8 +903,8 @@ int parse_float(
         float_buf += round;
         DF("round: size = 4, round = %d\n", round);
 
-        /* Round (there is a truncation option to omit this step) */
-        /* if (1) */ {
+        /* If .DSABL FPT (default), round the floating-point value */
+        if (!ENABL(FPT)) {
             uint64_t onehalf;
 
             if (size < 4) {
@@ -1136,7 +1136,7 @@ char           *get_symbol(
                 }
 
                 sprintf(newsym, "%ld$%d", symnum, lsb);
-                if (enabl_debug && lstfile) {
+                if (enabl_debug > 1 && lstfile) {
                     fprintf(lstfile, "lsb %d: %s -> %s\n",
                             lsb, symcp, newsym);
                 }

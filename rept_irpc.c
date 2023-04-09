@@ -96,7 +96,7 @@ STREAM         *expand_rept(
     gb = new_buffer();
 
     levelmod = 0;
-    if (!list_md) {
+    if (!LIST(MD)) {
         list_level--;
         levelmod = 1;
     }
@@ -248,7 +248,7 @@ STREAM         *expand_irp(
     gb = new_buffer();
 
     levelmod = 0;
-    if (!list_md) {
+    if (!LIST(MD)) {
         list_level--;
         levelmod++;
     }
@@ -378,7 +378,7 @@ STREAM         *expand_irpc(
     gb = new_buffer();
 
     levelmod = 0;
-    if (!list_md) {
+    if (!LIST(MD)) {
         list_level--;
         levelmod++;
     }

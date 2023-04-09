@@ -4,6 +4,7 @@
 #include <stdlib.h>
 #include <ctype.h>
 #include <string.h>
+#include <time.h>
 
 #include "assemble.h"                  /* my own definitions */
 
@@ -22,8 +23,7 @@
 #include "rept_irpc.h"
 
 #include "rad50.h"
-
-
+#include "macro11.h"
 
 
 #define CHECK_EOL       check_eol(stack, cp)
@@ -234,7 +234,7 @@ static int assemble(
     if (line == NULL)
         return -1;                     /* Return code for EOF. */
 
-    if (!enabl_lc) {                   /* If lower case disabled, */
+    if (!ENABL(LC)) {                  /* If lower case disabled, */
         upcase(line);                  /* turn it into upper case. */
     }
 
@@ -276,6 +276,7 @@ O    75                                         .endc
         if (op->section->type != SECTION_PSEUDO)
             return 1;                  /* Not a pseudo-op. */
         switch (op->value) {
+        /* MACRO-11 does not list .IIF (only the second part) or .IF or .IFT or .IFF or .IFTF or .ENDC */
         case P_IF:
         case P_IFXX:  /* .IFxx where xx=DF NDF Z EQ NZ NE L LT G GT LE GE */
             suppressed++;              /* Nested.  Suppressed. */
@@ -289,15 +290,15 @@ O    75                                         .endc
             if (suppressed == 1) {     /* Can reduce suppression from 1 to 0. */
                 if (!conds[last_cond].ok)
                     suppressed = 0;
-// TODO     list_value(stack->top, 1 - suppressed);
             }
+// TODO     list_value(stack->top, 1 - suppressed);
             break;
         case P_IFT:
             if (suppressed == 1) {     /* Can reduce suppression from 1 to 0. */
                 if (conds[last_cond].ok)
                     suppressed = 0;
-// TODO     list_value(stack->top, 1 - suppressed);
             }
+// TODO     list_value(stack->top, 1 - suppressed);
             break;
         case P_ENDC:
             suppressed--;              /* Un-nested. */
@@ -305,6 +306,8 @@ O    75                                         .endc
                 pop_cond(last_cond - 1);        /* Re-enabled. */
             break;
         }
+        if (!LIST(CND))
+            list_line_act |= LIST_SUPPRESS_LINE;
         return 1;
     }
 
@@ -344,7 +347,7 @@ O    75                                         .endc
             list_location(stack->top, DOT);
 
             /* See if local symbol block should be incremented */
-            if (!enabl_lsb && !local) {
+            if (!ENABL(LSB) && !local) {
                 lsb = get_next_lsb();
             }
 
@@ -510,6 +513,9 @@ do_mcalled_macro:
 
             stack_push(stack, macstr); /* Push macro expansion
                                           onto input stream */
+
+            if (!LIST(MC))
+                list_line_act |= LIST_SUPPRESS_LINE;
 
             return 1;
         }
@@ -704,29 +710,83 @@ do_mcalled_macro:
                         list_line_act |= LIST_PAGE_BEFORE | LIST_SUPPRESS_LINE;  /* TODO: 'LABEL: .PAGE' is [wrongly] suppressed */
                     return 1;
 
-                case P_SBTTL:
-                    /* TODO: If we have page headings and TOC ...
-                     *       remember that ';' is valid within the subtitle text.
-                     *       Also, an empty SBTTL is allowed.
-                     *       This is done on pass 1 if not .NLIST TOC */
+                case P_TITLE:
+                    /* accquire module name and title string */
+                    {
+                        int             len = 0;
 
-                    /* This block is just so we can see the .SBTTL for debugging */
-                    if (enabl_debug && !pass && !list_pass_0) {
-                        FILE           *ofile = lstfile;
-
-                        if (enabl_debug && ofile == NULL)
-                            ofile = stderr;
-
-                        if (ofile != NULL ) {
-                            cp = skipwhite(cp);
-                            fputs("TOC -- ", ofile);
-
-                            while (*cp != '\n')
-                                fputc(*cp++, ofile);
-                            fputc(*cp, ofile);
+                        while (ascii2rad50(cp[len]) > 0 && len < symbol_len)
+                            len++;
+                        if (!len) {
+                            report_err(stack->top, "Invalid .TITLE module-name\n");
+                            return 0;
                         }
-                    }  /* END-OF-DEBUGGING-STUFF */
 
+                        if (module_name != NULL) {
+                            free(module_name);
+                        }
+                        module_name = memcheck(malloc(len + 1));
+                        memcpy(module_name, cp, len);
+                        module_name[len] = '\0';
+                        upcase(module_name);
+
+                        strncpy(title_string, cp, 31);
+                        len = strlen(title_string);
+                        if (len > 0 && title_string[len - 1] == '\n')
+                            title_string[len - 1] = '\0';
+                    }
+                    return 1;
+
+                case P_SBTTL:
+                    if (lstfile == NULL)
+                        return 1;  /* Ignore if we are not listing */
+
+                    if (pass || (list_pass_0 && LIST(LIS)))
+                        return 1;  /* Ignore if on pass 2 or listing pass 1 itself */
+
+                    if (!LIST(TOC))
+                        return 1;  /* Ignore for .NLIST TOC */
+
+                    if (!toc_shown) {
+                        toc_shown = 1;
+                        if (title_string[0] != '\0') {
+                            time_t          current_time = time(NULL);
+                            struct tm      *local_time   = localtime(&current_time);
+                            const char     *day_name[7]  = {
+                                               "Sunday",
+                                               "Monday",
+                                               "Tuesday",
+                                               "Wednesday",
+                                               "Thursday",
+                                               "Friday",
+                                               "Saturday"             
+                                            };
+                            const char     *month_name[12] = {
+                                               "Jan", "Feb", "Mar", "Apr",
+                                               "May", "Jun", "Jul", "Aug",                   
+                                               "Sep", "Oct", "Nov", "Dec"
+                                            };
+
+                            fprintf(lstfile, "%.31s  " PROGRAM_NAME " " BASE_VERSION, title_string);
+                            if (local_time != NULL && local_time->tm_year > 69)
+                                fprintf(lstfile, "  %s %02d-%3s-%4d %02d:%02d",
+                                                 day_name[local_time->tm_wday],
+                                                 local_time->tm_mday,
+                                                 month_name[local_time->tm_mon],
+                                                 local_time->tm_year + 1900,
+                                                 local_time->tm_hour,
+                                                 local_time->tm_min);
+                            fprintf(lstfile, "\n");
+                        }
+                        fprintf(lstfile, "Table of contents\n\n");
+                    }
+                    {
+                        int len = strlen(cp);
+
+                        if (len > 0 && cp[len - 1] == '\n')
+                            cp[len - 1] = '\0';
+                        fprintf(lstfile, "%6d  %.119s\n", stack->top->line, cp);
+                    }
                     return 1;
 
                 case P_IDENT:
@@ -851,7 +911,7 @@ do_mcalled_macro:
                         go_section(tr, sect_stack[sect_sp]);
                         DOT = dot_stack[sect_sp];
                         list_location(stack->top, DOT);
-                        if (!enabl_lsb) {
+                        if (!ENABL(LSB)) {
                             lsb = get_next_lsb();
                         }
                         sect_sp--;
@@ -930,7 +990,7 @@ do_mcalled_macro:
                             return 0;
                         }
 
-                        /* TODO: .NTYPE should throw a (-stringent) warning if not in a macro (see .NARG) */
+                        /* TODO: .NTYPE should throw a (-stringent) warning if not in a macro (see P_NARG) */
 
                         cp = skipdelim(cp);
 
@@ -1011,18 +1071,23 @@ do_mcalled_macro:
                             top_here.line = stack->top->line;
                         }
 
-                         /* V05.05: .REM x ... X works (it is case insensitive) */
+                        /* V05.05: .REM x ... X works (it is case insensitive) */
                         quote[0] = (char) toupper((unsigned char) quote_ch);
                         quote[1] = (char) tolower((unsigned char) quote_ch);
                         quote[2] = '\n';
                         quote[3] = 0;
+
+                        if (!LIST(COM))
+                            list_flush();
 
                         for (;;) {
                             cp += strcspn(cp, quote);
                             if (*cp == quote[0] || *cp == quote[1])
                                 break;
 
-                            list_flush();
+                            if (LIST(COM))
+                                list_flush();
+
                             line = stack_getline(stack);     /* Read next input line */
                             if (line == NULL) {
                             /* list_line_act &=  ~LIST_PAGE_BEFORE;  // Suppress the EOF page throw */
@@ -1030,7 +1095,7 @@ do_mcalled_macro:
                                 free(top_here.name);
                                 return 0;  /* EOF */
                             }
-                            if (!enabl_lc) {                   /* If lower case disabled, */
+                            if (!ENABL(LC)) {                  /* If lower case disabled, */
                                 upcase(line);                  /* turn it into upper case. */
                             }
                             cp = line;
@@ -1136,8 +1201,12 @@ do_mcalled_macro:
 
                 case P_MACRO:
                     {
-                        MACRO          *mac = defmacro(cp, stack, CALLED_NORMAL);
+                        MACRO          *mac;
 
+                        if (!LIST(MD))
+                            list_line_act |= LIST_SUPPRESS_LINE;
+
+                        mac = defmacro(cp, stack, CALLED_NORMAL);
                         return mac != NULL;
                     }
 
@@ -1175,189 +1244,75 @@ do_mcalled_macro:
                         return reptstr != NULL;
                     }
 
-                case P_LIST:
                 case P_NLIST:
+                case P_LIST:
                     if (!pass)
-                        return 1;  /* Ignore on pass 1 */
+                        return 1;  /* Ignore .NLIST [*] and .LIST [*] on pass 1 */
 
                     if (EOL(*cp)) {
+                        if (ARGS_IGNORE(L_LIS))
+                            return 1;  /* Don't change the list-level if we disabled the 'LIS' dirarg */
+
                         list_level += (op->value == P_LIST ? 1 : -1);
-// TODO                 list_value(stack->top, list_level);
+// TODO:                list_value(stack->top, list_level);
                         return 1;
                     }
 
-                    while (!EOL(*cp)) {
-                        int argnum;
-
-                        label = get_symbol(cp, &cp, NULL);
-                        if (!label) {
-                            report_err(stack->top, "Missing %s option\n", op->label);
-                            return 0;
-                        }
-
-                        if (strlen(label) > 3)
-                            argnum = -1;
-                        else
-                            argnum = lookup_list_arg(label);
-
-                        if (argnum < 0) {
-                            report_warn(stack->top, "Invalid %s option '%s' [ignored]\n", op->label, label);
-                            free(label);
-                            cp = skipdelim(cp);
-                            continue;
-                        }
-
-                        if (list_arg[argnum].defval < 0)
-                            report_warn(stack->top, "Unsupported %s option '%s'\n", op->label, label);
-
-                        list_arg[argnum].curval = (op->value == P_LIST) ? 1 : 0;
-
-                        /* TODO: Clean up (see enable_tf() in macro11.c) */
-
-                        if (strcmp(label, "BEX") == 0)
-                            list_bex = (op->value == P_LIST) ? 1 : 0;
-                        else if (strcmp(label, "MD") == 0) {
-                            list_md  = (op->value == P_LIST) ? 1 : 0;
-                        } else if (strcmp(label, "ME") == 0) {
-                            list_me  = (op->value == P_LIST) ? 1 : 0;
-                        }
-                        free(label);
-                        cp = skipdelim(cp);
-                    }
-                    return 1;
-
-                case P_ENABL:
-                    while (!EOL(*cp)) {
-                        int argnum;
-
-                        label = get_symbol(cp, &cp, NULL);
-                        if (!label) {
-                            report_err(stack->top, "Missing %s option\n", op->label);
-                            return 0;
-                        }
-
-                        if (strlen(label) > 3)
-                            argnum = -1;
-                        else
-                            argnum = lookup_enabl_arg(label);
-
-                        if (argnum < 0) {
-                            report_warn(stack->top, "Invalid %s option '%s' [ignored]\n", op->label, label);
-                            free(label);
-                            cp = skipdelim(cp);
-                            continue;
-                        }
-
-                        if (enabl_arg[argnum].defval < 0)
-                            report_warn(stack->top, "Unsupported %s option '%s'\n", op->label, label);
-
-                        enabl_arg[argnum].curval = (op->value == P_ENABL) ? 1 : 0;
-
-                        if (argnum == E_LSB)
-                            lsb = get_next_lsb();
-
-                        /* TODO: Clean up (see enable_tf() in macro11.c) */
-
-                        if (strcmp(label, "AMA") == 0)
-                            enabl_ama = 1;
-                        else if (strcmp(label, "LSB") == 0) {
-                            enabl_lsb = 1;
-                        /*  lsb = get_next_lsb();  */
-                        } else if (strcmp(label, "GBL") == 0) {
-                            enabl_gbl = 1;
-                        } else if (strcmp(label, "LC") == 0) {
-                            enabl_lc = 1;
-                        } else if (strcmp(label, "LCM") == 0) {
-                            enabl_lcm = 1;
-                        } else if (strcmp(label, "MCL") == 0) {
-                            enabl_mcl = 1;
-                        }
-                        free(label);
-                        cp = skipdelim(cp);
-                    }
-                    return 1;
+                    /* FALLS THROUGH */
 
                 case P_DSABL:
-                    /* TODO: Merge P_DSABL and P_ENABL */
-                    while (!EOL(*cp)) {
-                        int argnum;
+                case P_ENABL:
+                    {
+                        int arg_type;
+                        int arg_value;
 
-                        label = get_symbol(cp, &cp, NULL);
-                        if (!label) {
-                            report_warn(stack->top, "Missing %s option\n", op->label);
-                            return 0;
+                        if (op->value == P_NLIST || op->value == P_LIST) {
+                            arg_type  = ARGS_NLIST_LIST;
+                            arg_value = (op->value == P_NLIST) ? ARGS_NLIST : ARGS_LIST;
+                        } else {
+                            arg_type  = ARGS_DSABL_ENABL;
+                            arg_value = (op->value == P_DSABL) ? ARGS_DSABL : ARGS_ENABL;
                         }
 
-                        if (strlen(label) > 3)
-                            argnum = -1;
-                        else
-                            argnum = lookup_enabl_arg(label);
+                        while (!EOL(*cp)) {
+                            int argnum;
 
-                        if (argnum < 0) {
-                            report_err(stack->top, "Invalid %s option '%s' [ignored]\n", op->label, label);
+                            label = get_symbol(cp, &cp, NULL);
+                            if (!label) {
+                                report_err(stack->top, "Missing %s option\n", op->label);
+                                return 0;
+                            }
+
+                            if (strlen(label) > 3)
+                                argnum = -1;
+                            else
+                                argnum = lookup_arg(label, arg_type);
+
+                            if (argnum < 0) {
+                                report_warn(stack->top, "Invalid %s option '%s' [ignored]\n", op->label, label);
+                                free(label);
+                                cp = skipdelim(cp);
+                                continue;
+                            }
+
+                            if (!ARGS_IGNORE(argnum)) {
+                                if (enabl_list_arg[argnum].flags & ARGS_NOT_SUPPORTED)
+                                    report_warn(stack->top, "Unsupported %s option '%s'\n", op->label, label);
+
+                                enabl_list_arg[argnum].curval = arg_value;
+
+                                if (argnum == E_LSB)
+                                    lsb = get_next_lsb();
+                            }
+
                             free(label);
                             cp = skipdelim(cp);
-                            continue;
                         }
-
-                        if (enabl_arg[argnum].defval < 0)
-                            report_warn(stack->top, "Unsupported %s option '%s'\n", op->label, label);
-
-                        enabl_arg[argnum].curval = (op->value == P_ENABL) ? 1 : 0;
-
-                        if (argnum == E_LSB)
-                            lsb = get_next_lsb();
-
-                        /* TODO: Clean up (see enable_tf() in macro11.c) */
-
-                        if (strcmp(label, "AMA") == 0)
-                            enabl_ama = 0;
-                        else if (strcmp(label, "LSB") == 0) {
-                        /*  lsb = get_next_lsb();  */
-                            enabl_lsb = 0;
-                        } else if (strcmp(label, "GBL") == 0) {
-                            enabl_gbl = 0;
-                        } else if (strcmp(label, "LC") == 0) {
-                            enabl_lc = 0;
-                        } else if (strcmp(label, "LCM") == 0) {
-                            enabl_lcm = 0;
-                        } else if (strcmp(label, "MCL") == 0) {
-                            enabl_mcl = 0;
-                        }
-                        free(label);
-                        cp = skipdelim(cp);
+                        return 1;
                     }
-                    return 1;
 
                 case P_LIMIT:
                     store_limits(stack->top, tr);
-                    return 1;
-
-                case P_TITLE:
-                    /* accquire module name */
-                    {
-                        int             len = 0;
-
-                        while (ascii2rad50(cp[len]) > 0 && len < symbol_len)
-                            len++;
-                        if (!len) {
-                            report_err(stack->top, "Invalid .TITLE module-name\n");
-                            return 0;
-                        }
-
-                        if (module_name != NULL) {
-                            free(module_name);
-                        }
-                        module_name = memcheck(malloc(len + 1));
-                        memcpy(module_name, cp, len);
-                        module_name[len] = '\0';
-                        upcase(module_name);
-                    }
-
-                    /* TODO: If we want page headings ...
-                     *       ... remember that ';' is valid within the title text ...
-                     *       ... and only the first 31 characters are listed */
-
                     return 1;
 
                 case P_END:
@@ -1397,6 +1352,7 @@ do_mcalled_macro:
 
                         /* TODO: Check if we are within a MACRO call or .REPT / .IRP / .IRPC block */
                         /*       At the moment, we report references to .END in read_body() - which is not ideal */
+                        /*       We could [mis-]use list_within_exp to do this */
 
                         /* Check if we are within a .IF block (unless -relaxed) */
                         if (!RELAXED && last_cond >= 0) {
@@ -1511,7 +1467,7 @@ do_mcalled_macro:
                             else
                                 thing2 = memcheck(strdup(""));
 
-                            if (!enabl_lcm) {
+                            if (!ENABL(LCM)) {
                                 upcase(thing1);
                                 upcase(thing2);
                             }
@@ -1581,9 +1537,19 @@ do_mcalled_macro:
                                     ok = 0, word = 0;
                                 }
 
-                                if (op->value != P_IIF)
-                                //  if (!STRICTER /* TODO: Replace !STRICTER with an extended listing control */ )
+                                if (op->value == P_IIF) {
+                                    if (!LIST(CND)) {
+                                        if (ok)
+                                            list_source(stack->top, skipdelim(cp));  /* Change list line to after the .IIF part */
+                                        else
+                                            list_line_act |= LIST_SUPPRESS_LINE;
+                                    }
+                                } else {
+                                    if (LIST(CND))
                                         list_value(stack->top, word);  /* Extension to MACRO-11 */
+                                    else
+                                        list_line_act |= LIST_SUPPRESS_LINE;
+                                }
 
                                 free_tree(tvalue);
                             }
@@ -1615,6 +1581,9 @@ do_mcalled_macro:
                     return CHECK_EOL;
 
                 case P_IFF:
+                    if (!LIST(CND))
+                        list_line_act |= LIST_SUPPRESS_LINE;
+
                     if (last_cond < 0) {
                         report_err(stack->top, "No conditional block active\n");
                         return 0;
@@ -1625,6 +1594,9 @@ do_mcalled_macro:
                     return 1;
 
                 case P_IFT:
+                    if (!LIST(CND))
+                        list_line_act |= LIST_SUPPRESS_LINE;
+
                     if (last_cond < 0) {
                         report_err(stack->top, "No conditional block active\n");
                         return 0;
@@ -1635,6 +1607,9 @@ do_mcalled_macro:
                     return 1;
 
                 case P_IFTF:
+                    if (!LIST(CND))
+                        list_line_act |= LIST_SUPPRESS_LINE;
+
                     if (last_cond < 0) {
                         report_err(stack->top, "No conditional block active\n");
                         return 0;
@@ -1643,6 +1618,9 @@ do_mcalled_macro:
                     return 1;           /* Don't suppress. */
 
                 case P_ENDC:
+                    if (!LIST(CND))
+                        list_line_act |= LIST_SUPPRESS_LINE;
+
                     if (last_cond < 0) {
                         report_err(stack->top, "No conditional block active\n");
                         return 0;
@@ -1675,7 +1653,7 @@ do_mcalled_macro:
                     return 1;
 
                 case P_ASECT:
-                    if (!enabl_lsb) {
+                    if (!ENABL(LSB)) {
                         lsb = get_next_lsb();
                     }
                     go_section(tr, &absolute_section);
@@ -1818,7 +1796,7 @@ do_mcalled_macro:
                             }
                         }
 
-                        if (!enabl_lsb) {
+                        if (!ENABL(LSB)) {
                             lsb = get_next_lsb();
                         }
                         go_section(tr, sect);
@@ -2679,7 +2657,7 @@ do_mcalled_macro:
 
     /* If .ENABL MCL is in effect, try to define the symbol as a
      * library macro if it is not a defined symbol. */
-    if (enabl_mcl) {
+    if (ENABL(MCL)) {
         if (lookup_sym(label, &symbol_st) == NULL) {
             if (do_mcall (label, stack)) {
                 goto do_mcalled_macro;
@@ -2699,12 +2677,12 @@ int get_next_lsb(
 {
     if (lsb_used) {
         lsb_used = 0;
-        if (enabl_debug && lstfile) {
+        if (enabl_debug > 1 && lstfile) {
             fprintf(lstfile, "get_next_lsb: lsb: %d becomes %d (= next_lsb)\n", lsb, next_lsb);
         }
         return next_lsb++;
     } else {
-        if (enabl_debug && lstfile) {
+        if (enabl_debug > 1 && lstfile) {
             fprintf(lstfile, "get_next_lsb: lsb: stays %d\n", lsb);
         }
         return lsb;

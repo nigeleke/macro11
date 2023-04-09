@@ -214,7 +214,7 @@ void implicit_gbl(
                 if (!(value->data.symbol->flags & SYMBOLFLAG_LOCAL) &&
                     !isdigit(value->data.symbol->label[0])) {
                     /* Unless it's a local symbol, */
-                    if (enabl_gbl) {
+                    if (ENABL(GBL)) {
                         /* either make the undefined symbol into an
                            implicit global */
                         add_sym(value->data.symbol->label, 0, SYMBOLFLAG_GLOBAL,

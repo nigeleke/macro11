@@ -26,24 +26,26 @@ int             enabl_debug = 0;        /* Whether assembler debugging is enable
 
 int             strictness = 0;         /* Neither -strict nor -relaxed are in effect */
 
-int             opt_enabl_ama = 0;      /* May be changed by command line */
-int             enabl_ama;      /* When set, chooses absolute (037) versus
-                                 * PC-relative */
-                                /* (067) addressing mode */
-int             enabl_lsb = 0;  /* When set, stops non-local symbol
-                                 * definitions from delimiting local
-                                 * symbol sections. */
-
-int             enabl_gbl = 1;  /* Implicit definition of global symbols */
-
-int             enabl_lc = 1;   /* If lowercase disabled, convert assembler
-                                 * source to upper case. */
-
-int             enabl_lcm = 0;  /* If lowercase disabled, .IF IDN/DIF are
-                                 * case-sensitive. */
-
-int             enabl_mcl = 0;  /* When set, unknown symbols are looked up
-                                 * as if .MCALL <sym> had been done. */
+// TODO: Remove ...
+//
+// int             opt_enabl_ama = 0;      /* May be changed by command line */
+// int             enabl_ama;      /* When set, chooses absolute (037) versus
+//                                  * PC-relative */
+//                                 /* (067) addressing mode */
+// int             enabl_lsb = 0;  /* When set, stops non-local symbol
+//                                  * definitions from delimiting local
+//                                  * symbol sections. */
+//
+// int             enabl_gbl = 1;  /* Implicit definition of global symbols */
+//
+// int             enabl_lc = 1;   /* If lowercase disabled, convert assembler
+//                                  * source to upper case. */
+//
+// int             enabl_lcm = 0;  /* If lowercase disabled, .IF IDN/DIF are
+//                                  * case-sensitive. */
+//
+// int             enabl_mcl = 0;  /* When set, unknown symbols are looked up
+//                                  * as if .MCALL <sym> had been done. */
 
 int             suppressed = 0; /* Assembly suppressed by failed conditional */
 

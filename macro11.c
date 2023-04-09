@@ -75,53 +75,19 @@ DAMAGE.
 #endif
 #endif
 
-#if 0
-
-/* lookup_enabl_arg finds the enum of a .ENABL or .DSABL directive */
-
-int lookup_enabl_arg(
-    const char argnam[4])
-{
-    int i;
-
-    for (i = 0; i < E__LAST; i++)
-        if (enabl_arg[i].name[0] == argnam[0] &&
-            enabl_arg[i].name[1] == argnam[1] &&
-            enabl_arg[i].name[2] == argnam[2])
-            return i;
-    return -1;
-}
-
-
-
-/* lookup_LIST_arg finds the enum of a .LIST or .NLIST directive */
-
-int lookup_list_arg(
-    const char argnam[4])
-{
-    int i;
-
-    for (i = 0; i < L__LAST; i++)
-        if (list_arg[i].name[0] == argnam[0] &&
-            list_arg[i].name[1] == argnam[1] &&
-            list_arg[i].name[2] == argnam[2])
-            return i;
-    return -1;
-}
-
-#endif
 
 /* enable_tf is called by command argument parsing to enable and
-   disable named options. */
+   disable named options.  If flags != 0 then flags are |'ed instead. */
 
 static void enable_tf(
-    char *opt,
-    int tf)
+    char    *opt,
+    int      tf,
+    unsigned flags)
 {
     char           *cp = opt;
     char            argnam[4];
     int             argnum;
-    int             i;
+    int             len;
 
     do {
         if (cp == opt)
@@ -129,55 +95,46 @@ static void enable_tf(
         else
             cp = skipdelim(cp);
 
-        for (i = 0; i < 4; i++)
+        for (len = 0; len < 4; len++)
             if (isupper((unsigned char) *cp))
-                argnam[i] = *cp++;
+                argnam[len] = *cp++;
             else
                break;
 
-        if (i < 2 || i > 3) {
-           fprintf(stderr, "Invalid -%c option: %s\n", (tf) ? 'e' : 'd', (cp - i));
+        if (len < 2 || len > 3) {
+           fprintf(stderr, "Invalid -%s option: %s [ignored]\n", (flags) ? "-dc" : (tf) ? "e" : "d", (cp - len));
            break;
         }
 
-        argnam[i] = '\0';
+        argnam[len] = '\0';
 
-        argnum = lookup_enabl_arg(argnam);
-        if (argnum >= 0) {
-            enabl_arg[argnum].defval = tf;
-            continue;
+        argnum = lookup_arg(argnam, ARGS_ALL_TYPES);
+        if (argnum < 0) {
+            fprintf(stderr, "Unknown -%s option: %s [ignored]\n", (flags) ? "dc" : (tf) ? "e" : "d", argnam);
+        /*  break;  */
+        } else {
+            if (flags == ARGS_NO_FLAGS) {
+                if (argnum == L_LIS) {
+                    if (tf)
+                        enabl_list_arg[L_LIS].defval++;   /* Increase list level */
+                    else
+                        enabl_list_arg[L_LIS].defval--;   /* Decrease list level */
+                } else {
+                    enabl_list_arg[argnum].defval = tf;
+                }
+            } else {
+                enabl_list_arg[argnum].flags |= flags;
+            }
         }
-
-        argnum = lookup_list_arg(argnam);
-        if (argnum >= 0) {
-            list_arg[argnum].defval = tf;
-            continue;
-        }
-
-        fprintf(stderr, "Ignored -%c argument: '%s'\n", (tf) ? 'e' : 'd', argnam);
-    /*  break;  */
     } while (*cp != '\0');
-
-    /* TODO: Replace all these with ENABL() or LIST() etc. */
-
-    if (strcmp(opt, "AMA") == 0)
-        opt_enabl_ama = tf;
-    else if (strcmp(opt, "GBL") == 0)
-        enabl_gbl = tf;         /* Unused in pass 2 */
-    else if (strcmp(opt, "ME") == 0)
-        list_me = tf;
-    else if (strcmp(opt, "BEX") == 0)
-        list_bex = tf;
-    else if (strcmp(opt, "MD") == 0)
-        list_md = tf;
 }
 
 /*JH:*/
 static void print_version(
     FILE *strm)
 {
-    fprintf(strm, "macro11 - portable MACRO-11 assembler for DEC PDP-11\n");
-    fprintf(strm, "  Version %s\n", VERSIONSTR);
+    fprintf(strm, PROGRAM_NAME " - portable MACRO-11 assembler for DEC PDP-11\n");
+    fprintf(strm, "  Version " VERSIONSTR "\n");
     fprintf(strm, "  Copyright 2001 Richard Krehbiel,\n");
     fprintf(strm, "  modified  2009 by Joerg Hoppe,\n");
     fprintf(strm, "  modified  2015-2017,2020-2023 by Olaf 'Rhialto' Seibert,\n");
@@ -216,8 +173,8 @@ static void print_help(
     printf("\n");
     print_version(stdout);
     printf("Usage:\n");
-    printf("  macro11 [-o <file>] [-l {- | <file>}] \n");
-    printf("          [-h] [-v] [-e <option>] [-d <option>]\n");
+    printf("  " PROGRAM_NAME " [-o <file>] [-l {- | <file>}] \n");
+    printf("          [-h] [-v] [-e <option>] [-d | -dc <option>]\n");
     printf("          [-rsx | -rt11] [-stringent | -strict | -relaxed]\n");
     printf("          [-ysl <num>] [-yus] [-ylls] [-yl1] [-yd]\n");
     printf("          [-I <directory>]\n");
@@ -228,8 +185,9 @@ static void print_help(
     printf("  <inputfile>  MACRO-11 source file(s) to assemble\n");
     printf("\n");
     printf("Options:\n");
-    printf("-d  disable <option> (see below)\n");
     printf("-e  enable <option> (see below)\n");
+    printf("-d  disable <option> (see below)\n");
+    printf("-dc disable changing of <option> (see below)\n");
     printf("-h  print this help\n");
     printf("-l  gives the listing file name (.LST)\n");
     printf("    -l - enables listing to stdout.\n");
@@ -244,7 +202,7 @@ static void print_help(
 
     printf("-v  print version\n");
     printf("    Violates DEC standard, but sometimes needed\n");
-    printf("-x  invokes macro11 to expand the contents of the registered macro \n");
+    printf("-x  invokes " PROGRAM_NAME " to expand the contents of the registered macro\n");
     printf("    libraries (see -m) into individual .MAC files in the current\n");
     printf("    directory.  No assembly of input is done.\n");
     printf("    This must be the last command line option!\n");
@@ -264,7 +222,11 @@ static void print_help(
     printf("-yl1       Extension: list the first pass too, not only the second.\n");
 /*  printf("-yd        Extension: enable debugging.\n");  */
     printf("\n");
-    printf("Options for -e and -d are:\n");
+    printf("Options for -e, -d, and -dc are:\n");
+    usage_dirargs();
+    printf("\n");
+
+#if 0  /* TODO: remove */
     printf("AMA (off) - absolute addressing (versus PC-relative)\n");
     printf("            See .ENABL AMA, .DSABL AMA\n");
     printf("GBL (on)  - treat unresolved symbols as globals, linker must resolve.\n");
@@ -274,6 +236,8 @@ static void print_help(
     printf("BEX (on)  - show binary (no func)\n");
     printf("MD  (on)  - list macro/rept definition\n");
     printf("\n");
+#endif
+
 }
 
 void usage(char *message) {
@@ -285,7 +249,7 @@ void prepare_pass(int this_pass, STACK *stack, int nr_files, char **fnames)
 {
     int i;
 
-    assert((this_pass & ~1) == 0);  /* this_pass == 0 or 1 */
+    assert(this_pass == 0 || this_pass == 1);
 
     stack_init(stack);
 
@@ -304,7 +268,7 @@ void prepare_pass(int this_pass, STACK *stack, int nr_files, char **fnames)
     }
 
     if (enabl_debug && list_pass_0 && this_pass)
-        show_dirargs("End of pass 1: ");  /* Show the directive argunents at the end of pass 1 */
+        dump_dirargs("End of pass 1: ");  /* Show the directive argunents at the end of pass 1 */
 
     if (enabl_debug || list_pass_0)
         fprintf(stderr, "******** Starting pass %d ********\n", this_pass+1);
@@ -314,13 +278,16 @@ void prepare_pass(int this_pass, STACK *stack, int nr_files, char **fnames)
 
     load_dirargs();
     if (enabl_debug && this_pass)
-        show_dirargs(NULL);  /* Show the directive argunents before starting pass 2 */
+        dump_dirargs("Start  pass 2: ");  /* Show the directive argunents before starting pass 2 */
 
     DOT = 0;
     current_pc->section = &blank_section;
     last_dot_section = NULL;
     pass = this_pass;
-    list_page_top = 1;  /* TODO: If we implement true pagination, set this to 0 */
+    if (toc_shown)
+        list_page_top = 0;
+    else
+        list_page_top = 1;  /* TODO: If we implement true pagination, set this to 0 */
     list_line_act = LIST_PAGE_BEFORE;
     report_errcnt = 0;
     stmtno = 0;
@@ -333,11 +300,13 @@ void prepare_pass(int this_pass, STACK *stack, int nr_files, char **fnames)
     sect_sp = -1;
     suppressed = 0;
     radix = 8;
-    enabl_lc = 1;
-    enabl_lcm = 0;
-    enabl_lsb = 0;
-    enabl_ama = opt_enabl_ama;
-    enabl_gbl = 1;
+
+// TODO: Remove ...
+//    enabl_lc = 1;
+//    enabl_lcm = 0;
+//    enabl_lsb = 0;
+//    enabl_ama = opt_enabl_ama;
+//    enabl_gbl = 1;
 
     if (enabl_debug) {
         if (!pass) {
@@ -387,12 +356,12 @@ int main(
     int             strict  = 0;
     int             relaxed = 0;
 
+    add_dirargs();
+
     if (argc <= 1) {
         print_help();
         return /* exit */ EXIT_FAILURE;
     }
-
-    add_dirargs();
 
     for (arg = 1; arg < argc; arg++) {
         if (*argv[arg] == '-') {
@@ -412,14 +381,21 @@ int main(
                     usage("-e must be followed by an option to enable\n");
                 }
                 upcase(argv[++arg]);
-                enable_tf(argv[arg], 1);
+                enable_tf(argv[arg], ARGS_ENABL, ARGS_NO_FLAGS);
             } else if (!strcasecmp(cp, "d")) {
                 /* Followed by an option to disable */
                 if(arg >= argc-1 || !isalpha((unsigned char)*argv[arg+1])) {
                     usage("-d must be followed by an option to disable\n");
                 }
                 upcase(argv[++arg]);
-                enable_tf(argv[arg], 0);
+                enable_tf(argv[arg], ARGS_DSABL, ARGS_NO_FLAGS);
+            } else if (!strcasecmp(cp, "dc")) {
+                /* Followed by an option to disable changes */
+                if(arg >= argc-1 || !isalpha((unsigned char)*argv[arg+1])) {
+                    usage("-dc must be followed by an option to disable changes\n");
+                }
+                upcase(argv[++arg]);
+                enable_tf(argv[arg], -1, ARGS_IGNORE_THIS);
             } else if (!strcasecmp(cp, "m")) {
                 /* Macro library */
                 /* This option gives the name of an RT-11 compatible
@@ -629,6 +605,9 @@ int main(
 
     if (obj != NULL)
         fclose(obj);
+
+    if (enabl_debug)
+        dump_dirargs("End of pass 2: ");
 
     if (lstfile) {
         migrate_undefined();           /* Migrate the undefined symbols */
