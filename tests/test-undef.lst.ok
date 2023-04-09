@@ -1,6 +1,6 @@
 test-undef.mac:1: ***ERROR MACRO '.TTYOU' not found
-       1                                        .MCALL  .TTYOUT
-       1                                
+      1                                         .MCALL  .TTYOUT
+      1
 
 
 Symbol table
