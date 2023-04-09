@@ -47,7 +47,7 @@ assemble() {
     fmt="$1"
     t="$2"
 
-    ../macro11 $fmt -l "$t".lst -o "$t".obj "$t".mac 2>/dev/null
+    ../macro11 $fmt -ylls -e ME -l "$t".lst -o "$t".obj "$t".mac 2>/dev/null
 
     # Ignore error status and messages from the assembler.
     # We check the listing file to see what we expect.
@@ -71,6 +71,14 @@ assemble_both() {
 
     assemble -rsx "$t"
     assemble -rt11 "$t"
+}
+
+accept() {
+    for t in $*
+    do
+	cp "$t" "$t.ok"
+	git add "$t.ok"
+    done
 }
 
 
