@@ -203,10 +203,10 @@ void list_throw_page(
 }
 
 
-/* trunc truncates a string by replacing all ' ' and '\t' at the end with '\0' */
+/* trunc_line truncates a string by replacing all ' ' and '\t' at the end with '\0' */
 /* If the string is longer than the maximum allowed, it will truncate from there instead */
 
-static void trunc(
+static void trunc_line(
     char *string)
 {
     int             len = strlen(string);
@@ -320,7 +320,7 @@ static void list_process(
     else
         padto(binline, offsetof(LSTFORMAT, source));
 
-    trunc(listline);
+    trunc_line(listline);
 
     if (!errline) {  /* Never pre-process error lines */
 
@@ -377,7 +377,7 @@ static void list_process(
 
         if (!LIST(SRC)) {
             listline[0] = '\0';
-            trunc(binline);
+            trunc_line(binline);
             if ( /* (binline[0] == ' ' || binline[0] == '\0') && */
                     strlen(binline) < offsetof(LSTFORMAT, pc))
                 return;  /* Completely suppress source lines with only a sequence number */
@@ -394,7 +394,7 @@ static void list_process(
     }
 
     if (listline[0] == '\0')
-        trunc(binline);
+        trunc_line(binline);
 
     /* Handle .LIST LD (extension to MACRO-11) and .LIST HEX */
     /* Remember: if binline has been truncated it will be filled with '\0' */
@@ -409,11 +409,12 @@ static void list_process(
     /* Output the line */
 
     if (binline[binstart] != '\0') {
-        if (symbol_list_locals)
+        if (symbol_list_locals) {
             if (looked_up_local_sym)
                 fprintf(lstfile, "[$%5d]", lsb);
             else
                 fputs("        ", lstfile);
+        }
         if (nlist_loc_only) {
                 binline[offsetof(LSTFORMAT, gap_after_seq) + 1] = '\0';
                 fputs(binline, lstfile);
@@ -458,7 +459,7 @@ void show_error_line(  /* Synonym for show_print_line() */
     if (!isdigit((unsigned char) binline[offsetof(LSTFORMAT, gap_after_seq) - 1]))
         return;
 
-    fprintf(stderr, "%-*s%.132s\n", offsetof(LSTFORMAT, words), binline, listline);
+    fprintf(stderr, "%-*s%.132s\n", (int)offsetof(LSTFORMAT, words), binline, listline);
 }
 
 
