@@ -959,14 +959,16 @@ do_mcalled_macro:
                             }
                             free_tree(value);
                         }
-                        if (ok)
-                            if (op->value == P_PRINT)
+                        if (ok) {
+                            if (op->value == P_PRINT) {
                                 if (within_macro_expansion(stack->top))
                                     MUST_LIST_THIS_LINE();  /* Always list the .PRINT line if in macro expansion */
                                 if (show_print_lines) {
                                     MUST_LIST_THIS_LINE();  /* Always list the .PRINT line for -sp */
                                     show_print_line();      /* If not listing, show it instead */
                                 }
+                            }
+                        }
                         return ok;
                     }
 
