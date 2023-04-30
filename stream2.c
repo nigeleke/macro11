@@ -504,12 +504,14 @@ void inject_source(
     /* All others are passed through unchanged */
     {
         unsigned i;
+        size_t len = strlen(line);
 
-        for (i = 0; i < strlen(line); i++) {
-            if (line[i] == '\\') {
+        for (i = 0; i < len; i++) {
+            if (line[i] == '\\' && i + 1 < len) {
                 if (line[i+1] == 't') {
-                    strcpy(&line[i], &line[i+1]);
+                    memmove(&line[i], &line[i+1], len - i);
                     line[i] = '\t';
+                    len--;
                 }
             }
         }
