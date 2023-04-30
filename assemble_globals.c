@@ -1,6 +1,4 @@
-
 #define ASSEMBLE_GLOBALS__C
-
 
 #include "assemble_globals.h"          /* Own definitions */
 
@@ -24,38 +22,20 @@ int             last_locsym = 0;        /* The last local symbol number generate
 
 int             enabl_debug = 0;        /* Whether assembler debugging is enabled */
 
+int             support_m11 = 0;        /* Do we want to support m11 extensions? */
+
+int             abs_0_based = 0;        /* TRUE if all ABSolute sections are zero based (else only '. ABS.') */
+
 int             strictness = 0;         /* Neither -strict nor -relaxed are in effect */
 
-// TODO: Remove ...
-//
-// int             opt_enabl_ama = 0;      /* May be changed by command line */
-// int             enabl_ama;      /* When set, chooses absolute (037) versus
-//                                  * PC-relative */
-//                                 /* (067) addressing mode */
-// int             enabl_lsb = 0;  /* When set, stops non-local symbol
-//                                  * definitions from delimiting local
-//                                  * symbol sections. */
-//
-// int             enabl_gbl = 1;  /* Implicit definition of global symbols */
-//
-// int             enabl_lc = 1;   /* If lowercase disabled, convert assembler
-//                                  * source to upper case. */
-//
-// int             enabl_lcm = 0;  /* If lowercase disabled, .IF IDN/DIF are
-//                                  * case-sensitive. */
-//
-// int             enabl_mcl = 0;  /* When set, unknown symbols are looked up
-//                                  * as if .MCALL <sym> had been done. */
-
 int             suppressed = 0; /* Assembly suppressed by failed conditional */
-
 
 MLB            *mlbs[MAX_MLBS]; /* macro libraries specified on the
                                  * command line */
 int             nr_mlbs = 0;    /* Number of macro libraries */
 
-COND            conds[MAX_CONDS];       /* Stack of recent conditions */
-int             last_cond;      /* 0 means no stacked cond. */
+COND            conds[MAX_CONDS];  /* Stack of recent conditions */
+int             last_cond;         /* 0 means no stacked cond. */
 
 SECTION        *sect_stack[SECT_STACK_SIZE]; /* 32 saved sections */
 int             dot_stack[SECT_STACK_SIZE];  /* 32 saved sections */

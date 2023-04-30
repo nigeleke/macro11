@@ -1,37 +1,36 @@
 #define ASSEMBLE__C
 
+/*
+ * Main assembly code.
+ */
 
-#include <stdlib.h>
 #include <ctype.h>
+#include <stdlib.h>
 #include <string.h>
-#include <time.h>
 
-#include "assemble.h"                  /* my own definitions */
+#include "assemble.h"                  /* My own definitions */
 
-#include "assemble_globals.h"
 #include "assemble_aux.h"
-
-#include "util.h"
-
+#include "assemble_globals.h"
+#include "extree.h"
+#include "listing.h"
+#include "macros.h"
 #include "mlb.h"
 #include "object.h"
-#include "listing.h"
 #include "parse.h"
-#include "symbols.h"
-#include "extree.h"
-#include "macros.h"
-#include "rept_irpc.h"
-
 #include "rad50.h"
-#include "macro11.h"
+#include "rept_irpc.h"
+#include "symbols.h"
+#include "util.h"
 
+
+#define DEBUG_LSB       0  /* See also parse.c */
 
 #define CHECK_EOL       check_eol(stack, cp)
 
-#define STRICT_IF_DF_NDF_RECURSES 1    /* 0 = '< ... >' forbidden, else allowed if !STRICTER */
-                                       /* TODO: This can probably be disabled permanently */
+#define STRICT_IF_DF_NDF_RECURSES 0    /* 0 = '< ... >' forbidden, else allowed if !STRICTER */
 
-/* Assemble a '.IF DF' or '.IF NDF' statement (or .IIF) */
+/* eval_ifdf_ifndf assembles a '.IF DF' or '.IF NDF' statement (or .IIF) */
 
 //    .if df  x & y -> both  must be defined
 //    .if df  x ! y -> either may be defined
@@ -98,9 +97,9 @@ static int eval_ifdf_ifndf(
         if (!if_df) found = !found;
 
         if (op) { /* '!' = OR */
-            ok |= found;
+            ok |= found;  /* C has no '||=' */
         } else {  /* '&' = AND */
-            ok &= found;
+            ok &= found;  /* C has no '&&=' */
         }
 
         cp = skipwhite(ncp);
@@ -114,8 +113,29 @@ static int eval_ifdf_ifndf(
     return ok;
 }
 
+
+/* abs_section_addr - returns the address of the relevant absolute section */
+/* If the section is REL then the absolute_section address will be returned */
+/* If -a0 is in effect and the section is OVR the parameter will be returned */
+/* Else the absolute_section address will be returned */
+
+
+static SECTION *abs_section_addr(
+    SECTION *sect)
+{
+    if (sect->flags & PSECT_REL)
+        return &absolute_section;
+
+    if (abs_0_based)
+        if (sect->flags & PSECT_COM)
+            return sect;
+
+    return &absolute_section;
+}
+
+
 /* assemble a rad50 value (some number of words). */
-static unsigned * assemble_rad50 (
+static unsigned *assemble_rad50(
     char *cp,
     int max,
     int *count,
@@ -191,6 +211,7 @@ static unsigned * assemble_rad50 (
     return ret;
 }
 
+
 /* Get the mode and check the result */
 
 int get_mode_check(
@@ -212,6 +233,7 @@ int get_mode_check(
     return retval;
 }
 
+
 /* assemble - read a line from the input stack, assemble it. */
 
 /* This function is way way too large, because I just coded most of
@@ -227,8 +249,7 @@ static int assemble(
     char           *label;      /* A label */
     char           *line;       /* The whole line */
     SYMBOL         *op;         /* The operation SYMBOL */
-    int             local;      /* Whether a label is a local label or
-                                   not */
+    int             local;      /* Whether a label is a local label or not */
 
     line = stack_getline(stack);
     if (line == NULL)
@@ -240,18 +261,44 @@ static int assemble(
 
     cp = line;
 
+    stmtno++;                          /* Increment statement number */
+
+    list_source(stack->top, line);     /* List source */
+
+    if (STRICT || ENABL(CDR)) {
+        if (from_file_stream(stack->top)) {
+            int             len = strlen(line) - 1;  /* Line will be terminated by "\n") */
+
+            if (STRICT)
+                if (len > MAX_FILE_LINE_LENGTH)
+                    report_warn(stack->top, "Line length of %d is longer than the allowed %d\n",
+                                            len, MAX_FILE_LINE_LENGTH);
+
+            if (ENABL(CDR))
+                if (len > 72)
+                    line[72] = '\0';
+        } else {
+            if (STRINGENT) {
+                int             len = strcspn(line, "\n");
+
+                if (len >= MAX_FILE_LINE_LENGTH)
+                    report_warn(stack->top, "Processed line length of %d is longer than the allowed %d\n",
+                                            len + 1, MAX_FILE_LINE_LENGTH);
+            }
+        }
+    }
+
     /* Frankly, I don't need to keep "line."  But I found it quite
        handy during debugging, to see what the whole operation was,
        when I'm down to parsing the second operand and things aren't
        going right. */
 
-    stmtno++;                          /* Increment statement number */
-
-    list_source(stack->top, line);     /* List source */
-
     if (suppressed) {
         /* Assembly is suppressed by unsatisfied conditional.  Look
            for ending and enabling statements. */
+
+        if (!LIST(CND))
+            DONT_LIST_THIS_LINE();
 
         op = get_op(cp, &cp);          /* Look at operation code */
 
@@ -284,21 +331,21 @@ O    75                                         .endc
         case P_IFTF:
             if (suppressed == 1)       /* Reduce suppression from 1 to 0. */
                 suppressed = 0;
-// TODO     list_value(stack->top, 1 - suppressed);
+            list_short_value_if(stack->top, suppressed == 0);  /* Extension to MACRO-11 */
             break;
         case P_IFF:
             if (suppressed == 1) {     /* Can reduce suppression from 1 to 0. */
                 if (!conds[last_cond].ok)
                     suppressed = 0;
             }
-// TODO     list_value(stack->top, 1 - suppressed);
+            list_short_value_if(stack->top, suppressed == 0);  /* Extension to MACRO-11 */
             break;
         case P_IFT:
             if (suppressed == 1) {     /* Can reduce suppression from 1 to 0. */
                 if (conds[last_cond].ok)
                     suppressed = 0;
             }
-// TODO     list_value(stack->top, 1 - suppressed);
+            list_short_value_if(stack->top, suppressed == 0);  /* Extension to MACRO-11 */
             break;
         case P_ENDC:
             suppressed--;              /* Un-nested. */
@@ -306,8 +353,6 @@ O    75                                         .endc
                 pop_cond(last_cond - 1);        /* Re-enabled. */
             break;
         }
-        if (!LIST(CND))
-            list_line_act |= LIST_SUPPRESS_LINE;
         return 1;
     }
 
@@ -323,6 +368,8 @@ O    75                                         .endc
         ncp = skipwhite(ncp);
         if (*ncp == ':') {             /* Colon, for symbol definition? */
             ncp++;
+            if (!STRINGENT)
+                ncp = skipwhite(ncp);
             /* maybe it's a global definition */
             if (*ncp == ':') {
                 if (local) {
@@ -388,6 +435,8 @@ O    75                                         .endc
 
             flags = SYMBOLFLAG_DEFINITION | local;
             cp++;
+            if (!STRINGENT)
+                cp = skipwhite(cp);
             if (*cp == '=') {
                 if (local) {
                    report_warn(stack->top, "Local symbol may not be set global '%s'\n", label);
@@ -396,6 +445,8 @@ O    75                                         .endc
                 }
                 cp++;
             }
+            if (!STRINGENT)
+                cp = skipwhite(cp);
             if (*cp == ':') {
                 flags |= SYMBOLFLAG_PERMANENT;
                 cp++;
@@ -403,11 +454,29 @@ O    75                                         .endc
 
             cp = skipwhite(cp);
 
-            value = parse_expr(cp, 0);
+            /* V05.03 (DOC: J.1.3) fixed a bug where '.' is on the RHS of an equation:
+             *   .PSECT TESTPS,ABS
+             *    TESTPC == .  ; Should be in section 'TESTPS' not '. ABS.'
+             *    .END
+             * This block fixes the specific case of assigning '.' -- not '.+n' etc.
+             * See also below for processing with the '-a0' command line option. */
+
+            if (/* !abs_0_based && */ *cp == '.') {
+                ncp = skipwhite(cp + 1);
+                if (EOL(*ncp)) {
+                    value = new_ex_tree(EX_SYM);
+                    value->cp = ncp;
+                    value->data.symbol = current_pc;
+                } else {
+                    value = parse_expr(cp, 0);
+                }
+            } else {
+                value = parse_expr(cp, 0);
+            }
             cp = value->cp;
 
-            /* Special code: if the symbol is the program counter,
-               this is harder. */
+            /* Special code: if the symbol is the '.' program counter,
+             * this is harder. */
 
             if (strcmp(label, ".") == 0) {
                 if (current_pc->section->flags & PSECT_REL) {
@@ -425,7 +494,7 @@ O    75                                         .endc
                     } else if (symb->flags & SYMBOLFLAG_UNDEFINED) {
                         report_err(stack->top, "Can't ORG to undefined sym\n");
                     } else if (symb->section != current_pc->section) {
-                        report_err(stack->top, "Can't ORG to alternate section (use PSECT)\n");
+                        report_err(stack->top, "Can't ORG to alternate section (use .PSECT)\n");
                     } else {
                         DOT = symb->value + offset;
                         list_value(stack->top, DOT);
@@ -451,8 +520,31 @@ O    75                                         .endc
 
             /* regular symbols */
             if (value->type == EX_LIT) {
-                sym = add_sym(label, value->data.lit, flags, &absolute_section,
-                              &symbol_st, stack->top);
+
+                /* V05.03 (DOC: J.1.3) fixed a bug where '.' is on the RHS of an equation:
+                 *   .PSECT TESTPS,ABS
+                 *    TESTPC == .  ; Should be in section 'TESTPS' not '. ABS.'
+                 *    .END
+                 *
+                 * I think MACRO-11 should have gone one further:
+                 *   If a symbol with an absolute value is assigned in
+                 *   a PSECT with the ABS attribute then it should belong
+                 *   to that PSECT and not '. ABS.'.  Of course, this is if we
+                 *   KNOW that this section will not be relocated somewhere else.
+                 *
+                 * This is what we do here for '-a0'.  If an absolute symbol is
+                 * assigned within a REL PSECT, it is assigned to '. ABS.' else it
+                 * will be assigned to the current ABS PSECT (which may be '. ABS.').
+                 *
+                 * Although you can set the attributes ABS,CON it is always
+                 * treated as ABS,OVR.  There is no concatination of ABS sections.
+                 * We use ABS,CON to override the effect of '-a0' for a given section.
+                 *
+                 * TODO: Provide a fool-proof solution (?) */
+
+                sym = add_sym(label, value->data.lit, flags,
+                              abs_section_addr(current_pc->section), &symbol_st, stack->top);
+
             } else if (value->type == EX_SYM || value->type == EX_TEMP_SYM) {
                 sym = add_sym(label, value->data.symbol->value, flags,
                               value->data.symbol->section, &symbol_st, stack->top);
@@ -463,8 +555,8 @@ O    75                                         .endc
                     value->data.child.left != NULL &&
                     value->data.child.left->type == EX_LIT) {
                     report_warn(stack->top, "Complex expression has been assigned to a symbol\n");
-                    sym = add_sym(label, value->data.child.left->data.lit, flags, &absolute_section,
-                                  &symbol_st, stack->top);
+                    sym = add_sym(label, value->data.child.left->data.lit, flags,
+                                  abs_section_addr(current_pc->section), &symbol_st, stack->top);
                 } else {
                     report_err(stack->top, "Complex expression cannot be assigned to a symbol\n");
                     if (!pass) {
@@ -472,21 +564,15 @@ O    75                                         .endc
                            RT-11 monitor needs the symbol to apear to be
                            defined even if I can't resolve its value. */
                         sym = add_sym(label, 0, SYMBOLFLAG_UNDEFINED,
-                                      &absolute_section, &symbol_st, stack->top);
+                                      &absolute_section, &symbol_st, stack->top);  /* TODO: Use abs_section_addr() ? */
                     } else {
                         sym = NULL;
                     }
                 }
             }
 
-            if (sym != NULL) {
-                if (sym->section->flags & PSECT_REL) {
-            // c.f. list_word(stack->top, DOT, sym->value, 2, "'");  /* TODO: Need new routine to list_value_flags() */
-                    list_value(stack->top, sym->value); /* TODO: REMOVE after line above is done! */
-                } else {
-                    list_value(stack->top, sym->value);
-                }
-            }
+            if (sym != NULL)
+                list_symbol(stack->top, sym);
 
             free_tree(value);
             free(label);
@@ -515,7 +601,7 @@ do_mcalled_macro:
                                           onto input stream */
 
             if (!LIST(MC))
-                list_line_act |= LIST_SUPPRESS_LINE;
+                DONT_LIST_THIS_LINE();
 
             return 1;
         }
@@ -560,7 +646,6 @@ do_mcalled_macro:
 
                 /* 1) Ignore directives which do NOTHING if they have no arguments */
 
-                case P_CROSS:    /* TODO: move to (4) if we implement xref */
                 case P_DSABL:    /* -stringent */
                 case P_ENABL:    /* -stringent */
                 case P_FLT2:     /* -stringent */
@@ -568,15 +653,12 @@ do_mcalled_macro:
                 case P_GLOBL:    /* -stringent */
                 case P_MCALL:    /* -stringent */
                 case P_MDELETE:  /* -stringent */
-                case P_NOCROSS:  /* TODO: move to (4) if we implement xref */
                 case P_WEAK:     /* -stringent */
 
                     if (!EOL(*cp))
                         break;
                     if (!STRINGENT)
                         return 1;
-                    if (op->value == P_CROSS || op->value == P_NOCROSS)
-                        return 1;  /* .CROSS & .NOCROSS are valid without arguments */
                     report_warn(stack->top, "Directive '%s' should have arguments\n", op->label);
                     return 1;  /* Not strictly an error */
 
@@ -603,7 +685,8 @@ do_mcalled_macro:
                 case P_SAVE:
 
                     if (!EOL(*cp)) {
-                        report_warn(stack->top, "Directive '%s' does not accept arguments\n", op->label);
+                        if (STRICT || (op-> value != P_ENDR))
+                            report_warn(stack->top, "Directive '%s' does not accept arguments [ignored]\n", op->label);
                         if (op-> value != P_ENDR)
                             while (!EOL(*cp))
                                 cp++;  /* Remove all the arguments (just in case we CHECK_EOL etc.) */
@@ -659,21 +742,23 @@ do_mcalled_macro:
 
                 /* 4) Pass any directives which allow optional arguments unchanged */
 
-                case P_BLKB:    /* -stringent */
-                case P_BLKW:    /* -stringent */
-                case P_BYTE:    /* -stringent */
+                case P_BLKB:     /* -stringent */
+                case P_BLKW:     /* -stringent */
+                case P_BYTE:     /* -stringent */
+                case P_CROSS:
                 case P_CSECT:
                 case P_END:
                 case P_ENDM:
                 case P_ERROR:
                 case P_LIST:
                 case P_NLIST:
-                case P_PACKED:  /* -stringent */
+                case P_NOCROSS:
+                case P_PACKED:   /* -stringent */
                 case P_PRINT:
                 case P_PSECT:
                 case P_RADIX:
                 case P_SBTTL:
-                case P_WORD:    /* -stringent */
+                case P_WORD:     /* -stringent */
 
                     if (!EOL(*cp))
                         break;
@@ -696,7 +781,7 @@ do_mcalled_macro:
                 /* At this point, we only have directives which need to do something
                  * cp will either point to a character (skipwhite done) or eol.
                  * If the directive should be on an even boundary, it will be. */
-       
+
                 switch (op->value) {
 
                 case P_EOT:
@@ -704,10 +789,11 @@ do_mcalled_macro:
                    return 1;
 
                 case P_PAGE:
+                    /* Note that V05.05 even suppresses lines with labels on them (!) */
                     if (*cp == ';')
                         list_line_act |= LIST_PAGE_BEFORE;  /* Extension: list the .PAGE if it has a comment */
                     else
-                        list_line_act |= LIST_PAGE_BEFORE | LIST_SUPPRESS_LINE;  /* TODO: 'LABEL: .PAGE' is [wrongly] suppressed */
+                        list_line_act |= LIST_PAGE_BEFORE | LIST_SUPPRESS_LINE;  /* TODO: Check for labels (?) */
                     return 1;
 
                 case P_TITLE:
@@ -732,8 +818,12 @@ do_mcalled_macro:
 
                         strncpy(title_string, cp, 31);
                         len = strlen(title_string);
-                        if (len > 0 && title_string[len - 1] == '\n')
-                            title_string[len - 1] = '\0';
+                        title_string[strcspn(title_string, "\n")] = '\0';
+#if NODO
+                        /* MACRO-11 upper-cases the first character - but it's probably a bug */
+                        if (islower((unsigned char) title_string[0]))
+                            title_string[0] = (char) toupper((unsigned char) title_string[0]);
+#endif
                     }
                     return 1;
 
@@ -741,52 +831,23 @@ do_mcalled_macro:
                     if (lstfile == NULL)
                         return 1;  /* Ignore if we are not listing */
 
-                    if (pass || (list_pass_0 && LIST(LIS)))
+                    if (pass || (list_pass_0 && LIST(LIS) >= 0))
                         return 1;  /* Ignore if on pass 2 or listing pass 1 itself */
 
                     if (!LIST(TOC))
                         return 1;  /* Ignore for .NLIST TOC */
 
                     if (!toc_shown) {
+                        list_title_line("Table of contents");
                         toc_shown = 1;
-                        if (title_string[0] != '\0') {
-                            time_t          current_time = time(NULL);
-                            struct tm      *local_time   = localtime(&current_time);
-                            const char     *day_name[7]  = {
-                                               "Sunday",
-                                               "Monday",
-                                               "Tuesday",
-                                               "Wednesday",
-                                               "Thursday",
-                                               "Friday",
-                                               "Saturday"             
-                                            };
-                            const char     *month_name[12] = {
-                                               "Jan", "Feb", "Mar", "Apr",
-                                               "May", "Jun", "Jul", "Aug",                   
-                                               "Sep", "Oct", "Nov", "Dec"
-                                            };
-
-                            fprintf(lstfile, "%.31s  " PROGRAM_NAME " " BASE_VERSION, title_string);
-                            if (local_time != NULL && local_time->tm_year > 69)
-                                fprintf(lstfile, "  %s %02d-%3s-%4d %02d:%02d",
-                                                 day_name[local_time->tm_wday],
-                                                 local_time->tm_mday,
-                                                 month_name[local_time->tm_mon],
-                                                 local_time->tm_year + 1900,
-                                                 local_time->tm_hour,
-                                                 local_time->tm_min);
-                            fprintf(lstfile, "\n");
-                        }
-                        fprintf(lstfile, "Table of contents\n\n");
                     }
-                    {
-                        int len = strlen(cp);
 
-                        if (len > 0 && cp[len - 1] == '\n')
-                            cp[len - 1] = '\0';
-                        fprintf(lstfile, "%6d  %.119s\n", stack->top->line, cp);
-                    }
+                    cp[strcspn(cp, "\n")] = '\0';
+                    fprintf(lstfile, "%*s%*d%*s- %.119s\n",
+                                     (int) SIZEOF_MEMBER(LSTFORMAT, flag), "",
+                                     (int) SIZEOF_MEMBER(LSTFORMAT, line_number), stack->top->line,
+                                     (int) SIZEOF_MEMBER(LSTFORMAT, gap_after_seq), "",
+                                     cp);
                     return 1;
 
                 case P_IDENT:
@@ -833,7 +894,7 @@ do_mcalled_macro:
                             list_value(stack->top, radix);
                             if (radix != 8 && radix != 10 &&
                                 radix != 2 && radix != 16) {
-                                report_err(stack->top, "Argument to .RADIX (%d) must be 2, 8, 10, or 16\n", radix);
+                                report_err(stack->top, "Argument to .RADIX (%d.) must be 2, 8, 10, or 16\n", radix);
                                 radix = old_radix;
                                 ok = 0;
                             }
@@ -877,30 +938,57 @@ do_mcalled_macro:
                     /* FALL THROUGH */
 
                 case P_PRINT:
-                    if (!EOL(*cp)) {
-                        EX_TREE        *value = parse_expr(cp, 0);
+                    {
+                        int             ok = (op->value == P_PRINT);
 
-                        /* TODO: List both the location and [if provided] the value */
+                        list_location(stack->top, DOT);
 
-                        cp = value->cp;
-                        if (value->type == EX_LIT)
-                            list_value(stack->top, value->data.lit);
-                        else if (value->type == EX_SYM || value->type == EX_TEMP_SYM)
-                            list_value(stack->top, value->data.symbol->value);
-                        else
-                            report_warn(stack->top, "Complex expression to %s is not supported\n", op->label);
-                        free_tree(value);
+                        if (!EOL(*cp)) {
+                            EX_TREE        *value = parse_expr(cp, 0);
+
+                            cp = value->cp;
+                            ok = ok && CHECK_EOL;
+
+                            if (value->type == EX_LIT) {
+                                list_value(stack->top, value->data.lit);
+                            } else if (value->type == EX_SYM || value->type == EX_TEMP_SYM) {
+                                list_symbol(stack->top, value->data.symbol);
+                            } else {
+                                report_warn(stack->top, "Complex expression to %s is not supported\n", op->label);
+                                ok = FALSE;
+                            }
+                            free_tree(value);
+                        }
+                        if (ok)
+                            if (op->value == P_PRINT)
+                                if (within_macro_expansion(stack->top))
+                                    MUST_LIST_THIS_LINE();  /* Always list the .PRINT line if in macro expansion */
+                                if (show_print_lines) {
+                                    MUST_LIST_THIS_LINE();  /* Always list the .PRINT line for -sp */
+                                    show_print_line();      /* If not listing, show it instead */
+                                }
+                        return ok;
                     }
-                    return CHECK_EOL && (op->value == P_PRINT);
 
                 case P_SAVE:
                     if (sect_sp >= SECT_STACK_SIZE - 1) {
                         report_err(stack->top, "Too many saved sections for .SAVE\n");
                         return 0;
                     }
+
+                    if (STRINGENT)
+                        if (sect_sp >= 16 - 1)
+                            report_warn(stack->top,
+                                "The program section context stack can strictly only handle 16 .SAVEs\n");
+
+                    /* Contrary to the documentation, V05.05 does not appear to save
+                     * and restore the maximum section size */
+
                     sect_sp++;
                     sect_stack[sect_sp] = current_pc->section;
                     dot_stack[sect_sp] = DOT;
+                /*  list_location(stack->top, DOT);  // V05.05 does not list the location */
+                    list_3digit_value(stack->top, current_pc->section->sector);
                     return 1;
 
                 case P_RESTORE:
@@ -911,6 +999,7 @@ do_mcalled_macro:
                         go_section(tr, sect_stack[sect_sp]);
                         DOT = dot_stack[sect_sp];
                         list_location(stack->top, DOT);
+                        list_3digit_value(stack->top, current_pc->section->sector);
                         if (!ENABL(LSB)) {
                             lsb = get_next_lsb();
                         }
@@ -945,7 +1034,7 @@ do_mcalled_macro:
                         mstr = (MACRO_STREAM *) str;
 
                         add_sym(label, mstr->nargs, SYMBOLFLAG_DEFINITION | islocal,
-                                &absolute_section, &symbol_st, stack->top);
+                                abs_section_addr(current_pc->section), &symbol_st, stack->top);
                         free(label);
                         list_value(stack->top, mstr->nargs);
                         return CHECK_EOL;
@@ -971,7 +1060,7 @@ do_mcalled_macro:
                         free(string);
 
                         add_sym(label, nchars, SYMBOLFLAG_DEFINITION | islocal,
-                                &absolute_section, &symbol_st, stack->top);
+                                abs_section_addr(current_pc->section), &symbol_st, stack->top);
                         free(label);
 
                         list_value(stack->top, nchars);
@@ -990,10 +1079,15 @@ do_mcalled_macro:
                             return 0;
                         }
 
-                        /* TODO: .NTYPE should throw a (-stringent) warning if not in a macro (see P_NARG) */
+                        /* MACRO-11 does NOT create the symbol if .NTYPE is at the top-level (OQ error)  */
+                        /* However, it DOES create the symbol within .REPT, .IRP, .IRPC */
+                        /* If you want .NTYPE outside a macro, you could use .REPT 1; .NTYPE ...; .ENDR */
+
+                        if (STRICTEST)
+                            if (!within_macro_expansion(stack->top))
+                                report_warn(stack->top, ".NTYPE should strictly be within a macro expansion\n");
 
                         cp = skipdelim(cp);
-
                         if (!get_mode_check(cp, &cp, &mode, &error, stack->top,
                                             "Bad .NTYPE addressing mode (%s)\n")) {
                             free(label);
@@ -1001,7 +1095,7 @@ do_mcalled_macro:
                         }
 
                         add_sym(label, mode.type, SYMBOLFLAG_DEFINITION | islocal,
-                                &absolute_section, &symbol_st, stack->top);
+                                abs_section_addr(current_pc->section), &symbol_st, stack->top);
                         list_value(stack->top, mode.type);
                         free_addr_mode(&mode);
                         free(label);
@@ -1049,13 +1143,11 @@ do_mcalled_macro:
 
                 case P_REM:
                     /* Read and list [or discard] lines until one with a closing quote */
-                    /* TODO: Extension: .NLIST REM (?) [ -e REM | -d REM ] */
                     {
                         char            quote[4];
                         char            quote_ch = *cp++;
-                        STREAM          top_here = { NULL, NULL, 0, NULL };
-
-                        /* TODO: Make a function in stream2.c to handle copying the STREAM info [top_here] */
+                        char           *rem_name;
+                        int             rem_line;
 
                         if (quote_ch == '\0' || quote_ch == '\n') {  /* ';' is allowed */
                             report_err(stack->top, "Unexpected end-of-line (quote character expected)\n");
@@ -1063,13 +1155,8 @@ do_mcalled_macro:
                         }
 
                         /* Remember where the .REM started in case we need to report_err() it */
-                        {
-                            int             len = strlen(stack->top->name) + 1;
-
-                            top_here.name = memcheck(malloc(len));
-                            memcpy(top_here.name, stack->top->name, len);
-                            top_here.line = stack->top->line;
-                        }
+                        rem_name = memcheck(strdup(stack->top->name));
+                        rem_line = stack->top->line;
 
                         /* V05.05: .REM x ... X works (it is case insensitive) */
                         quote[0] = (char) toupper((unsigned char) quote_ch);
@@ -1077,8 +1164,15 @@ do_mcalled_macro:
                         quote[2] = '\n';
                         quote[3] = 0;
 
-                        if (!LIST(COM))
+                        if (!LIST(COM)) {
+                            /* Just in case the closing quote is on the same line as .REM */
+                            cp += strcspn(cp, quote);
+                            if (*cp == quote[0] || *cp == quote[1]) {
+                                cp++;
+                                return CHECK_EOL;  /* MACRO-11 does not allow further non-comment stuff on line */
+                            }
                             list_flush();
+                        }
 
                         for (;;) {
                             cp += strcspn(cp, quote);
@@ -1091,8 +1185,10 @@ do_mcalled_macro:
                             line = stack_getline(stack);     /* Read next input line */
                             if (line == NULL) {
                             /* list_line_act &=  ~LIST_PAGE_BEFORE;  // Suppress the EOF page throw */
-                                report_err(&top_here, "Closing quote to .REM %c (here) is missing\n", quote_ch);
-                                free(top_here.name);
+                                report_err(stream_here(rem_name, rem_line),
+                                           "Closing quote to .REM %c (here) is missing\n", quote_ch);
+                                free(rem_name);
+                            /*  exit(EXIT_FAILURE);  */
                                 return 0;  /* EOF */
                             }
                             if (!ENABL(LC)) {                  /* If lower case disabled, */
@@ -1101,7 +1197,7 @@ do_mcalled_macro:
                             cp = line;
                             list_source(stack->top, line);     /* List source */
                         }
-                        free(top_here.name);
+                        free(rem_name);
                     }
                     cp++;              /* Skip the closing quote */
                     return CHECK_EOL;  /* MACRO-11 does not allow further non-comment stuff on line */
@@ -1204,7 +1300,7 @@ do_mcalled_macro:
                         MACRO          *mac;
 
                         if (!LIST(MD))
-                            list_line_act |= LIST_SUPPRESS_LINE;
+                            DONT_LIST_THIS_LINE();
 
                         mac = defmacro(cp, stack, CALLED_NORMAL);
                         return mac != NULL;
@@ -1225,7 +1321,7 @@ do_mcalled_macro:
                         macstr = stack->top;
                         if (macstr->vtbl != &macro_stream_vtbl && macstr->vtbl != &rept_stream_vtbl
                             && macstr->vtbl != &irp_stream_vtbl && macstr->vtbl != &irpc_stream_vtbl) {
-                            report_err(stack->top, ".MEXIT not within a .MACRO\n");
+                            report_err(stack->top, ".MEXIT not within a macro\n");
                             return 0;
                         }
 
@@ -1249,12 +1345,36 @@ do_mcalled_macro:
                     if (!pass)
                         return 1;  /* Ignore .NLIST [*] and .LIST [*] on pass 1 */
 
-                    if (EOL(*cp)) {
-                        if (ARGS_IGNORE(L_LIS))
-                            return 1;  /* Don't change the list-level if we disabled the 'LIS' dirarg */
+                    /* TODO: Documentation (6.1.1) says list level < 0 suppresses all lines
+                     *       except errors and = 0 uses the .LIST/.NLIST settings else,
+                     *       if > 0 always lists the line */
 
-                        list_level += (op->value == P_LIST ? 1 : -1);
-// TODO:                list_value(stack->top, list_level);
+                    if (EOL(*cp)) {
+                        if (!ARGS_IGNORE(L_LIS)) {
+                            /* Don't change the list-level if we disabled the 'LIS' dirarg */
+                            /* TODO: We _could_ limit the list_level to a 'reasonable' value (?) */
+                            list_level += (op->value == P_LIST ? 1 : -1);
+                        }
+
+                        /* Note that V05.05 does not list '.LIST' and '.NLIST' lines ...
+                         * ... even if they start with a label e.g. 'LABEL: .LIST' */
+                        if (within_macro_expansion(stack->top)) {
+                            DONT_LIST_THIS_LINE();  /* Don't list .[N]LIST if within a macro expansion */
+                        } else {
+                            if (list_level < -1)
+                                MUST_LIST_THIS_LINE();  /* Extension: if transitioning outside the 'expected' levels */
+                            else if (list_level <= 0)
+                                DONT_LIST_THIS_LINE();  /* Extension: if transitioning outside the 'expected' levels */
+                        }
+
+                        if (enabl_debug) {
+                            MUST_LIST_THIS_LINE();  /* Always list the line for -yd */
+                        }
+
+                        /* Could use list_value() or [ list_short_value() ] instead -- Extension to MACRO-11 */
+                        list_3digit_value(stack->top, (list_level >= 0) ?
+                                                      (unsigned) list_level :
+                                                      (unsigned) 0x8000 | (list_level & 0x7fff));
                         return 1;
                     }
 
@@ -1301,8 +1421,11 @@ do_mcalled_macro:
 
                                 enabl_list_arg[argnum].curval = arg_value;
 
-                                if (argnum == E_LSB)
-                                    lsb = get_next_lsb();
+                                if (argnum == E_LSB) {
+                                    looked_up_local_sym = TRUE;  /* So we see it in the listing if -ylls */
+                                    if (op->value == P_ENABL || RELAXED)
+                                       lsb = get_next_lsb();
+                                }
                             }
 
                             free(label);
@@ -1341,8 +1464,7 @@ do_mcalled_macro:
                         if (xfer_address->type == EX_LIT)
                             list_value(stack->top, xfer_address->data.lit);
                         else {  /* Can only be either EX_SYM or EX_TEMP_SYM */
-                            list_value(stack->top, xfer_address->data.symbol->value);
-                            /* TODO: See symbol assignment - need to list "'" if relatve etc. */
+                            list_symbol(stack->top, xfer_address->data.symbol);
                         }
 
                         retval = (retval && CHECK_EOL);
@@ -1399,7 +1521,9 @@ do_mcalled_macro:
                 case P_IIF:
                 case P_IF:
                     {
-                        int             ok = FALSE;
+                        int             ok = -1;         /* Will be set to FALSE or TRUE if 'ok' has been changed */
+                        unsigned        value_word = 0;  /* Value to be shown in the value field */
+                        int             show_value = 0;  /* < 0 = ok flag, 0 = no value, > 0 = comparison value */
 
                         label = get_symbol(cp, &cp, NULL);      /* Get condition */
                         cp = skipdelim(cp);
@@ -1482,7 +1606,11 @@ do_mcalled_macro:
                             ok = (pass == 0);
                         } else if (strcmp(label, "P2") == 0) {
                             ok = (pass == 1);
-                        } else {
+                        }
+
+                        if (ok >= 0) {
+                            show_value = -1;  /* We have successfully parsed a TRUE/FALSE .IF [or .IIF] */
+                        } else if (label) {
                             int             sword;
                             unsigned        uword;
                             EX_TREE        *tvalue = parse_expr(cp, 0);
@@ -1491,7 +1619,6 @@ do_mcalled_macro:
 
                             if (tvalue->type != EX_LIT) {
                                 report_err(stack->top, "Bad %s expression\n", op->label);
-                                list_value(stack->top, 0);
                                 free_tree(tvalue);
 
                                 /* Undefined symbols are treated as zero for '.IF XX'
@@ -1500,63 +1627,70 @@ do_mcalled_macro:
 
                                 /* If the condition is also invalid, we'll see two errors */
                                 tvalue = new_ex_lit(0);
-                            /*  ok = TRUE;     // Pick something. */
-                            } /* else */ {
-                                unsigned        word;
-
-                                /* Convert to signed and unsigned words */
-                                sword = tvalue->data.lit & 0x7fff;
-
-                                /* No need to FIX ME:
-                                 * I don't know if the following
-                                 * is portable enough.  It should be but
-                                 * the replacement below surely is.
-                                 * if (tvalue->data.lit & 0x8000)
-                                 *     sword |= ~0x7FFF;   // Render negative */
-
-                                if (tvalue->data.lit & 0x8000)
-                                    sword = sword - 0x8000;   /* Render negative */
-
-                                /* Reduce unsigned value to 16 bits */
-                                uword = tvalue->data.lit & 0xffff;
-
-                                if (strcmp(label, "EQ") == 0 || strcmp(label, "Z") == 0)
-                                    ok = (uword == 0), word = uword;
-                                else if (strcmp(label, "NE") == 0 || strcmp(label, "NZ") == 0)
-                                    ok = (uword != 0), word = uword;
-                                else if (strcmp(label, "GT") == 0 || strcmp(label, "G") == 0)
-                                    ok = (sword > 0), word = sword;
-                                else if (strcmp(label, "GE") == 0)
-                                    ok = (sword >= 0), word = sword;
-                                else if (strcmp(label, "LT") == 0 || strcmp(label, "L") == 0)
-                                    ok = (sword < 0), word = sword;
-                                else if (strcmp(label, "LE") == 0)
-                                    ok = (sword <= 0), word = sword;
-                                else {
-                                    report_err(stack->top, "Invalid %s condition '%s'\n", op->label, label);
-                                    ok = 0, word = 0;
-                                }
-
-                                if (op->value == P_IIF) {
-                                    if (!LIST(CND)) {
-                                        if (ok)
-                                            list_source(stack->top, skipdelim(cp));  /* Change list line to after the .IIF part */
-                                        else
-                                            list_line_act |= LIST_SUPPRESS_LINE;
-                                    }
-                                } else {
-                                    if (LIST(CND))
-                                        list_value(stack->top, word);  /* Extension to MACRO-11 */
-                                    else
-                                        list_line_act |= LIST_SUPPRESS_LINE;
-                                }
-
-                                free_tree(tvalue);
                             }
+
+                            /* Convert to signed and unsigned words */
+                            sword = tvalue->data.lit & 0x7fff;
+
+                            /* No need to FIX ME:
+                             * I don't know if the following
+                             * is portable enough.  It should be but
+                             * the replacement below surely is.
+                             * if (tvalue->data.lit & 0x8000)
+                             *     sword |= ~0x7FFF;   // Render negative */
+
+                            if (tvalue->data.lit & 0x8000)
+                                sword = sword - 0x8000;   /* Render negative */
+
+                            /* Reduce unsigned value to 16 bits */
+                            uword = tvalue->data.lit & 0xffff;
+
+                            if (strcmp(label, "EQ") == 0 || strcmp(label, "Z") == 0)
+                                ok = (uword == 0), value_word = uword;
+                            else if (strcmp(label, "NE") == 0 || strcmp(label, "NZ") == 0)
+                                ok = (uword != 0), value_word = uword;
+                            else if (strcmp(label, "GT") == 0 || strcmp(label, "G") == 0)
+                                ok = (sword > 0), value_word = sword;
+                            else if (strcmp(label, "GE") == 0)
+                                ok = (sword >= 0), value_word = sword;
+                            else if (strcmp(label, "LT") == 0 || strcmp(label, "L") == 0)
+                                ok = (sword < 0), value_word = sword;
+                            else if (strcmp(label, "LE") == 0)
+                                ok = (sword <= 0), value_word = sword;
+                            else {
+                                report_err(stack->top, "Invalid %s condition '%s'\n", op->label, label);
+                            }
+
+                            free_tree(tvalue);
+                            if (ok >= 0)
+                                show_value = 1;  /* We want to show the actual value we compared against */
                         }
 
                         if (label)
                             free(label);
+
+                        if (ok < 0) {
+                            ok = FALSE;  /* Pick TRUE or FALSE if we failed to parse the line */
+                        } else {
+                            if (op->value == P_IIF) {
+                                if (LIST(CND)) {
+                                    if (!ok)
+                                        list_short_value_if(stack->top, ok);    /* Extension to MACRO-11 */
+                                } else {
+                                    if (ok)
+                                        list_source(stack->top, skipdelim(cp));  /* Skip to AFTER the .IIF part */
+                                    else
+                                        DONT_LIST_THIS_LINE();
+                                }
+                            } else {
+                                if (show_value < 0)
+                                    list_short_value_if(stack->top, ok);    /* Extension to MACRO-11 */
+                                else if (show_value > 0)
+                                    list_value_if(stack->top, value_word);  /* Extension to MACRO-11 */
+                                if (!LIST(CND))
+                                    DONT_LIST_THIS_LINE();
+                            }
+                        }
 
                         if (op->value == P_IIF) {
                             stmtno++;  /* the second half is a
@@ -1582,7 +1716,7 @@ do_mcalled_macro:
 
                 case P_IFF:
                     if (!LIST(CND))
-                        list_line_act |= LIST_SUPPRESS_LINE;
+                        DONT_LIST_THIS_LINE();
 
                     if (last_cond < 0) {
                         report_err(stack->top, "No conditional block active\n");
@@ -1590,12 +1724,12 @@ do_mcalled_macro:
                     }
                     if (conds[last_cond].ok)    /* Suppress if last cond is true */
                         suppressed++;
-// TODO             list_value(stack->top, 1 - suppressed);
+                    list_short_value_if(stack->top, suppressed == 0);  /* Extension to MACRO-11 */
                     return 1;
 
                 case P_IFT:
                     if (!LIST(CND))
-                        list_line_act |= LIST_SUPPRESS_LINE;
+                        DONT_LIST_THIS_LINE();
 
                     if (last_cond < 0) {
                         report_err(stack->top, "No conditional block active\n");
@@ -1603,23 +1737,23 @@ do_mcalled_macro:
                     }
                     if (!conds[last_cond].ok)   /* Suppress if last cond is false */
                         suppressed++;
-// TODO             list_value(stack->top, 1 - suppressed);
+                    list_short_value_if(stack->top, suppressed == 0);  /* Extension to MACRO-11 */
                     return 1;
 
                 case P_IFTF:
                     if (!LIST(CND))
-                        list_line_act |= LIST_SUPPRESS_LINE;
+                        DONT_LIST_THIS_LINE();
 
                     if (last_cond < 0) {
                         report_err(stack->top, "No conditional block active\n");
                         return 0;
                     }
-// TODO             list_value(stack->top, 1 - suppressed);
+                    list_short_value_if(stack->top, suppressed == 0);  /* Extension to MACRO-11 */
                     return 1;           /* Don't suppress. */
 
                 case P_ENDC:
                     if (!LIST(CND))
-                        list_line_act |= LIST_SUPPRESS_LINE;
+                        DONT_LIST_THIS_LINE();
 
                     if (last_cond < 0) {
                         report_err(stack->top, "No conditional block active\n");
@@ -1658,6 +1792,7 @@ do_mcalled_macro:
                     }
                     go_section(tr, &absolute_section);
                     list_location(stack->top, DOT);
+                    list_3digit_value(stack->top, current_pc->section->sector);
                     return 1;
 
                 case P_CSECT:
@@ -1677,7 +1812,7 @@ do_mcalled_macro:
                                 return 0;
                             }
                         } else {
-#if 0
+#if NODO
                             if (label[0] == '.' && label[1] == '\0') {
                                 report_err(stack->top, "%s '.' is not permitted\n", op->label);
                                            /* Actually, RSX DOES permit this */
@@ -1685,7 +1820,7 @@ do_mcalled_macro:
                                 return 0;
                             }
 #endif
-                            if (strlen(label) > 6) {
+                            if (strlen(label) > 6) {  /* Only possible if -ysl > 6 */
                                 if (STRINGENT)
                                     report_warn(stack->top, "%s name '%s' truncated to '%.6s'\n",
                                                             op->label, label, label);
@@ -1736,6 +1871,12 @@ do_mcalled_macro:
                                                            op->label, cp);
                                     return 0;
                                 }
+
+                                /* MACRO-11 V05.05 is a lot more flexible with arguments.
+                                 * Appended characters to the name are ignored.
+                                 * E.g. NOSAVE is valid as is ABSOLUTE.
+                                 * TODO: If not STRINGENT we could do this here. */
+
                                 if (strcmp(label, "ABS") == 0) {
                                     sect->flags &= ~PSECT_REL;      /* Not relative */
                                     sect->flags |= PSECT_COM;       /* implies common */
@@ -1749,18 +1890,35 @@ do_mcalled_macro:
                                     sect->flags |= PSECT_COM;       /* Is common */
                                 } else if (strcmp(label, "CON") == 0) {
                                     sect->flags &= ~PSECT_COM;      /* Concatenated */
-                                } else if (strcmp(label, "RW") == 0) {
+                                } else if (strcmp(label, "RW") == 0 || (support_m11 &&
+                                           strcmp(label, "PRV") == 0)) {
                                     sect->flags &= ~PSECT_RO;       /* Not read-only */
-                                } else if (strcmp(label, "RO") == 0) {
+                                } else if (strcmp(label, "RO") == 0 || (support_m11 &&
+                                           strcmp(label, "SHR") == 0)) {
                                     sect->flags |= PSECT_RO;        /* Is read-only */
-                                } else if (strcmp(label, "I") == 0) {
+                                } else if (strcmp(label, "I") == 0 || (support_m11 &&
+                                           strcmp(label, "INS") == 0)) {
                                     sect->flags &= ~PSECT_DATA;     /* Not data */
-                                } else if (strcmp(label, "D") == 0) {
-                                    sect->flags |= PSECT_DATA;      /* data */
+                                } else if (strcmp(label, "D") == 0 || (support_m11 &&
+                                           strcmp(label, "DAT") == 0)) {
+                                    sect->flags |= PSECT_DATA;      /* Is data */
                                 } else if (strcmp(label, "GBL") == 0) {
                                     sect->flags |= PSECT_GBL;       /* Global */
                                 } else if (strcmp(label, "LCL") == 0) {
                                     sect->flags &= ~PSECT_GBL;      /* Local */
+                                } else if (support_m11 && (strcmp(label, "BSS") == 0 ||
+                                                           strcmp(label, "B")   == 0)) {
+                                    sect->flags &= ~PSECT_RO;       /* Not read-only */
+                                    sect->flags |= PSECT_DATA;      /* Is data */
+                                    /* TODO: We could initialize all BSS sections with zeros
+                                     *       We simply need to keep a 'ZER' PSECT flag and ...
+                                     *       ... for each 'ZER' PSECT, write an RLD followed by ...
+                                     *       ... a TEXT of zeros (size of ZER PSECT) to the object file ...
+                                     *       ... at the end of pass 1 just after ENDGSD */
+                                } else if (support_m11 && strcmp(label, "HGH") == 0) {
+                                    /* For compatability with DEC assemblers (?) */
+                                } else if (support_m11 && strcmp(label, "LOW") == 0) {
+                                    /* For compatability with DEC assemblers (?) */
                                 } else {
                                     report_warn(stack->top, "Unknown %s attribute '%s' [ignored]\n",
                                                             op->label, label);
@@ -1790,7 +1948,7 @@ do_mcalled_macro:
                                  */
 
                                 if (STRICTEST) {
-                                    report_warn(stack->top, "Program section flags not identical\n");
+                                    report_warn(stack->top, "Program section flags not identical [ignored]\n");
                                 /*  sect->flags = old_flags;  //  Do not restore the flags */
                                 }
                             }
@@ -1801,18 +1959,23 @@ do_mcalled_macro:
                         }
                         go_section(tr, sect);
                         list_location(stack->top, DOT);
-
+                        list_3digit_value(stack->top, current_pc->section->sector);
                         return CHECK_EOL;
                     }                  /* end PSECT code */
                     break;
 
                 case P_CROSS:
                 case P_NOCROSS:
-                    /* V05.05 .[NO]CROSS X where X is undefined creates a GX reference */
+                    /* The .CROSS directive with no symbol list is equivalent to .ENABL CRF and
+                     * the .NOCROSS directive with no symbol list is equivalent to .DSABL CRF */
 
-                    if (EOL(*cp))
+                    if (EOL(*cp)) {
+                        if (!ARGS_IGNORE(E_CRF))
+                            enabl_list_arg[E_CRF].curval = (op->value == P_CROSS);
                         return 1;
+                    }
 
+                    /* V05.05 .[NO]CROSS X where X is undefined creates a GX reference */
                     /* Fall through to P_GLOBL (.[NO]CROSS can both create global undefined symbols) */
                     /* FALL THROUGH */
 
@@ -1872,7 +2035,8 @@ do_mcalled_macro:
                                     sym->flags |= upd_flags;
                                 } else {
                                     sym = add_sym(label, 0, add_flags,
-                                                  &absolute_section, add_table, stack->top);
+                                                  &absolute_section,  /* TODO: Use abs_section_addr() ? */
+                                                  add_table, stack->top);
                                 }
                             }
                             free(label);
@@ -1883,25 +2047,19 @@ do_mcalled_macro:
                         return retval;
                     }
 
+                case P_BYTE:
                 case P_WORD:
                     {
-                        /* .WORD might be followed by nothing, which
-                         * is an implicit .WORD 0 */
+                        int             size = (op->value == P_WORD ? 2 : 1);
+
+                        /* .BYTE or .WORD might be followed by nothing, which
+                         * is an implicit '.BYTE 0' or '.WORD 0' */
                         if (EOL(*cp)) {
-                            store_word(stack->top, tr, 2, 0);
+                            store_word(stack->top, tr, size, 0);
                             return 1;
                         } else
-                            return do_word(stack, tr, cp, 2);
+                            return do_word(stack, tr, cp, size);
                     }
-
-                case P_BYTE:
-                        /* .BYTE might be followed by nothing, which
-                         * is an implicit .BYTE 0 */
-                    if (EOL(*cp)) {
-                        store_word(stack->top, tr, 1, 0);
-                        return 1;
-                    } else
-                        return do_word(stack, tr, cp, 1);
 
                 case P_BLKW:
                 case P_BLKB:
@@ -1909,13 +2067,9 @@ do_mcalled_macro:
                         EX_TREE        *value;
                         int             ok = 1;
 
-                        /* TODO: .BLKB and .BLKW list only the location and not the count ...
-                         *       ... if (!STRICTER) I'd like to see both (or, perhaps, always?) */
-
                         if (EOL(*cp)) {
                             /* If no argument, assume 1. Documented but
                              * discouraged. Par 6.5.3, page 6-32. */
-                            /* warning(stack->top, "Argument to .BLKB/.BLKW should be present; 1 assumed\n"); */
                             value = new_ex_lit(1);
                         } else {
                             value = parse_expr(cp, 0);
@@ -1929,7 +2083,7 @@ do_mcalled_macro:
                             if ((op->value == P_BLKW) && (DOT & 1))
                                 DOT++; /* Force .BLKW to word boundary */
                             list_location(stack->top, DOT);
-                  /* TODO:  if (!STRICTER) list_value(stack->top, value->data.lit); // Once we have a routine to do both */
+                            list_value(stack->top, value->data.lit);  /* Extension to MACRO-11 */
                             DOT += value->data.lit * (op->value == P_BLKW ? 2 : 1);
                             change_dot(tr, 0);
                         }
@@ -1985,7 +2139,7 @@ do_mcalled_macro:
                     {
                         int i, count;
                         unsigned *rad50;
-                        
+
                         /* Now assemble the argument */
                         rad50 = assemble_rad50 (cp, 0, &count, stack);
                         for (i = 0; i < count; i++) {
@@ -2064,7 +2218,7 @@ do_mcalled_macro:
                             }
 
                             add_sym(label, ndigits, SYMBOLFLAG_DEFINITION | islocal,
-                                    &absolute_section, &symbol_st, stack->top);
+                                    abs_section_addr(current_pc->section), &symbol_st, stack->top);
                             free(label);
                         }
 
@@ -2106,7 +2260,7 @@ do_mcalled_macro:
 
                             if (EOL (*cp)) {
                                 if (STRICT && (op->value == I_MARK || op->value == I_SPL))
-                                    report_warn(stack->top, "%s requires an operand (assumed 0)\n", op->label);
+                                    report_warn(stack->top, "%s requires an operand [assumed 0]\n", op->label);
                                 /* Default argument is 0 */
                                 store_word(stack->top, tr, 2, op->value);
                             } else {
@@ -2127,13 +2281,14 @@ do_mcalled_macro:
                                         unsigned        mask = (op->value == I_MARK) ? 077 /* MARK */ : 07 /* SPL */;
 
                                         if (value->data.lit & ~mask)
-                                            report_warn(stack->top, "%s %d. is out of range [0:%d.]\n",
-                                                                    op->label, value->data.lit, mask);
+                                            report_err(stack->top, "%s %d. is out of range [0:%d.]\n",
+                                                                   op->label, value->data.lit, mask);
                                         store_word(stack->top, tr, 2, op->value | (value->data.lit & mask));
                                     } else {  /* I_EMT || I_TRAP */
-                                        if((value->data.lit & 0x8000) ? value->data.lit < 0xff00 : value->data.lit > 0xff)
-                                            report_warn(stack->top, "%s ^O%o is out of range [-400:377]\n",
-                                                                    op->label, value->data.lit);
+                                        if((value->data.lit & 0x8000) ?
+                                           (value->data.lit < 0xff00) : (value->data.lit > 0xff))
+                                            report_err(stack->top, "%s ^O%o is out of range [-400:377]\n",
+                                                                   op->label, value->data.lit);
                                         store_word(stack->top, tr, 2, op->value | (value->data.lit & 0377));
                                     }
                                 }
@@ -2464,7 +2619,7 @@ do_mcalled_macro:
                         }
                         return CHECK_EOL;
 
-#if 0
+#if NODO
 /*
  * Although it is arguable that the FPP TSTF/TSTD instruction has 1
  * operand which is a floating point source, the PDP11 Architecture
@@ -2615,19 +2770,20 @@ do_mcalled_macro:
                                     if (i > 0) {
                                         cp = skipwhite(cp);
                                         if (*cp++ != ',') {
-                                            report_err(stack->top, "Invalid syntax (operand %d: comma expected)\n", i+1);
+                                            report_err(stack->top,
+                                                       "Invalid syntax (operand %d: comma expected)\n", i+1);
                                             cp--;
                                         }
                                     }
-                                    { /**/
-                                    EX_TREE *ex = parse_expr(cp, 0);
+                                    {
+                                        EX_TREE *ex = parse_expr(cp, 0);
 
-                                    if (!expr_ok(ex)) {
-                                        report_err(stack->top, "Invalid expression (operand %d)\n", i+1);
+                                        if (!expr_ok(ex)) {
+                                            report_err(stack->top, "Invalid expression (operand %d)\n", i+1);
+                                        }
+                                        cp = ex->cp;
+                                        expr[i] = ex;
                                     }
-                                    cp = ex->cp;
-                                    expr[i] = ex;
-                                    } /**/
                                 }
                             } else {
                                 expr[0] = NULL;
@@ -2664,7 +2820,7 @@ do_mcalled_macro:
             }
         }
     }
-        
+
     /* Only thing left is an implied .WORD directive */
     /*JH: fall through in case of illegal opcode, illegal label! */
     free(label);
@@ -2677,20 +2833,23 @@ int get_next_lsb(
 {
     if (lsb_used) {
         lsb_used = 0;
+#if DEBUG_LSB
         if (enabl_debug > 1 && lstfile) {
             fprintf(lstfile, "get_next_lsb: lsb: %d becomes %d (= next_lsb)\n", lsb, next_lsb);
         }
+#endif
         return next_lsb++;
     } else {
+#if DEBUG_LSB
         if (enabl_debug > 1 && lstfile) {
             fprintf(lstfile, "get_next_lsb: lsb: stays %d\n", lsb);
         }
+#endif
         return lsb;
     }
 }
 
-/* assemble_stack assembles the input stack.  It returns the error
-   count. */
+/* assemble_stack assembles the input stack.  It returns the error count. */
 
 int assemble_stack(
     STACK *stack,

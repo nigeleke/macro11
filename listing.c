@@ -1,18 +1,22 @@
 #define LISTING__C
 
-#include <stdlib.h>
-#include <string.h>
-#include <stddef.h>
-#include <stdarg.h>
+/* Listing and error-message related. */
+
 #include <assert.h>
 #include <ctype.h>
+#include <stdarg.h>
+#include <stddef.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
 
 #include "listing.h"                /* My own definitions */
 
-#include "util.h"
 #include "assemble_globals.h"
+#include "macro11.h"
 #include "macros.h"
-#include "rept_irpc.h"
+#include "object.h"
+#include "util.h"
 
 
 /* GLOBAL VARIABLES */
@@ -22,23 +26,28 @@ int             toc_shown = 0;           /* Flags that at least one .SBTTL was l
 
 static char    *list_page_fmt = "\n\n";  /* Format to use for the page throw */
 
-int             list_page_top;      /* Are we at the top of a page? */
+int             list_page_top;           /* Are we at the top of a page? */
 
-int             list_line_act;      /* Action to perform when listing the current line */
+int             list_line_act;           /* Action to perform when listing the current line */
+int             listing_forced = 0;      /* If set to LIST_FORCE_LISTING most lines will be listed */
 
-int             list_within_exp;    /* Flag whether the listing line is DIRECTLY within a macro/rept/irp/irpc expansion */
+static int      list_within_exp;         /* Flags the listing line is DIRECTLY from a macro/rept/irp/irpc expansion */
 
-static char    *listline;           /* Source lines */
+static char     binline[sizeof(LSTFORMAT) + 16] = "";  /* For octal expansion */
 
-static char    *binline;            /* for octal expansion */
+static char    *listline;                /* Source lines */
 
-FILE           *lstfile = NULL;
+FILE           *lstfile = NULL;          /* Listing file */
 
-int             list_pass_0 = 0;    /* Also list what happens during the first pass */
+int             list_pass_0 = 0;         /* Also list what happens during the first pass */
 
-int             report_errcnt = 0;  /* Count the number of times report() has been called */
+int             report_errcnt = 0;       /* Count the number of times report() has been called */
 
-static int      errline = 0;        /* Set if current line has an error */
+int             show_error_lines = 0;    /* Show the line with the error when reporting errors */
+int             show_print_lines = 0;    /* Show .PRINT lines (similar to show_error_lines) */
+
+static int      errline = 0;             /* Set if current line has an error */
+
 
 /* can_list returns TRUE if listing may happen for this line. */
 
@@ -51,16 +60,30 @@ static int can_list(
     return ok;
 }
 
+
+/* build_list returns TRUE if the listing line might be used later. */
+
+static int build_list(
+    void)
+{
+    int             ok = can_list() ||
+                         (show_error_lines && pass > 0);
+
+    return ok;
+}
+
+
 /* dolist returns TRUE if listing is enabled. */
 
 static int dolist(
     void)
 {
-    int             ok = can_list () &&
-                         (list_level > 0 || errline);
+    int             ok = can_list() &&
+                         (list_level >= 0 || errline || (list_line_act & LIST_FORCE_LISTING));
 
     return ok;
 }
+
 
 /* list_source saves a text line for later listing by list_flush */
 
@@ -68,32 +91,102 @@ void list_source(
     STREAM *str,
     char *cp)
 {
-    if (can_list()) {
+    if (build_list()) {
         int             len = strcspn(cp, "\n");
 
         /* Not an error yet */
         errline = 0;
 
-        /* Save the line text away for later... */
+        /* We might see a local symbol later on */
+        looked_up_local_sym = FALSE;
+
+        /* Unless -yfl, we don't want to force the line to be listed */
+        list_line_act &= ~LIST_FORCE_LISTING;
+        list_line_act |= listing_forced;
+
+        /* Flag whether this listing line is within a macro/rept/irp/irpc expansion */
+        list_within_exp = within_macro_expansion(str);
+
+        /* Construct the LHS of the listing line */
+
+#if NODO
+        if (!binline)
+            binline = memcheck(malloc(sizeof(LSTFORMAT) + 16));
+#endif
+
+        sprintf(binline, "%*s%*d ", (int)SIZEOF_MEMBER(LSTFORMAT, flag), "",
+                                    (int)SIZEOF_MEMBER(LSTFORMAT, line_number), str->line);
+
+        /* Save the line-text away for later ... */
         if (listline)
             free(listline);
         listline = memcheck(malloc(len + 1));
         memcpy(listline, cp, len);
-        listline[len] = 0;
-
-        /* Flag whether the listing line is within a macro/rept/irp/irpc expansion */
-        list_within_exp = ((str->vtbl == &macro_stream_vtbl) ||
-                           (str->vtbl ==  &rept_stream_vtbl) ||
-                           (str->vtbl ==   &irp_stream_vtbl) ||
-                           (str->vtbl ==  &irpc_stream_vtbl));
-
-        if (!binline)
-            binline = memcheck(malloc(sizeof(LSTFORMAT) + 16));
-
-        sprintf(binline, "%*s%*d ", (int)SIZEOF_MEMBER(LSTFORMAT, flag), "",
-                                    (int)SIZEOF_MEMBER(LSTFORMAT, line_number), str->line);
+        listline[len] = '\0';
     }
 }
+
+
+/* list_title_line shows the title heading line(s) */
+/* Heading will be printed prior to printing the first .SBTTL on pass 1 */
+/* Or if a .TITLE was seen heading will be printed prior to starting pass 2 */
+/* -e BMK will suppress version and date & time information for pass 1 */
+/* -e BMK will suppress the whole heading on pass 2 (i.e. if no .SBTTL seen) */
+
+void list_title_line(
+    const char *line2)
+{
+    if (line2 == NULL) {  /* Will not be NULL if called from P_SBTTL */
+        if (!can_list())
+            return;
+
+        if (ENABL(BMK) || title_string[0] == '\0')
+            return;
+    }
+
+    fprintf(lstfile, "%.31s  " PROGRAM_NAME, (title_string[0] == '\0') ? ".MAIN." : title_string);
+
+    if (!ENABL(BMK)) {
+        time_t          current_time = time(NULL);
+        struct tm      *local_time   = localtime(&current_time);
+        const char     *day_name[7]  = {
+                            "Sunday",
+                            "Monday",
+                            "Tuesday",
+                            "Wednesday",
+                            "Thursday",
+                            "Friday",
+                            "Saturday"
+                        };
+        const char     *month_name[12] = {
+                            "Jan", "Feb", "Mar", "Apr",
+                            "May", "Jun", "Jul", "Aug",
+                            "Sep", "Oct", "Nov", "Dec"
+                        };
+
+        fprintf(lstfile, " " BASE_VERSION);
+        if (local_time != NULL && local_time->tm_year > 69)
+            fprintf(lstfile, "  %s %02d-%3s-%4d %02d:%02d",
+                             day_name[local_time->tm_wday],
+                             local_time->tm_mday,
+                             month_name[local_time->tm_mon],
+                             local_time->tm_year + 1900,
+                             local_time->tm_hour,
+                             local_time->tm_min);
+    } else {
+#if TODO /* (?) */
+        fprintf(lstfile, " " "Version#");
+        fprintf(lstfile, "  Weekday dd-Mmm-yyyy hh:mm");
+#endif
+    }
+/*  fprintf(lstfile, "\n");  // This is done below */
+
+    if (line2 == NULL)
+        fprintf(lstfile, "\n\n");
+    else
+        fprintf(lstfile, "\n%.*s\n\n", (STRINGENT) ? 80 /* DOC: J1.1.1 */ : 132, line2);
+}
+
 
 /* list_throw_page starts a new page on the listing */
 /* Note: Unlike MACRO-11 blank lines at the top of the page will be suppressed.
@@ -111,17 +204,25 @@ void list_throw_page(
 
 
 /* trunc truncates a string by replacing all ' ' and '\t' at the end with '\0' */
+/* If the string is longer than the maximum allowed, it will truncate from there instead */
 
 static void trunc(
     char *string)
 {
-    int i;
+    int             len = strlen(string);
 
-    for (i = strlen(string) - 1; i >= 0; i--)
-        if (string[i] == ' ' || string[i] == '\t')
-            string[i] = '\0';
+    if (len > MAX_LISTING_LINE_LEN) {
+        len = MAX_LISTING_LINE_LEN;
+        string[len] = '\0';
+    }
+
+    while (--len >= 0)
+        if (string[len] == ' ' || string[len] == '\t')
+            string[len] = '\0';
         else
-            return;
+            break;
+
+    return;
 }
 
 
@@ -145,7 +246,44 @@ static void list_oct2hex(
                     };
 
     for (;;) {
-        while (!isdigit(*cp))
+        while (!isdigit((unsigned char) *cp))
+            if (*cp++ == '\0')
+                return;
+
+        octval = strtol(cp, &cpe, 8);
+        len = cpe - cp;
+        assert(len > 0 && len <= 6);
+
+        oldche = *cpe;
+        sprintf(cp, format[len-1], octval);
+        *cpe = oldche;
+
+        cp = cpe;
+    }
+}
+
+
+/* list_oct2dec converts all octal numbers in a string to decimal */
+/* We can handle octal numbers with 1-6 digits. */
+
+static void list_oct2dec(
+    char *cp)
+{
+    char           *cpe;
+    int             len;
+    int             octval;
+    char            oldche;
+    const char      format[6][4] = { /* Digits   Octal   Decimal */
+                        "%1d",       /*      1       7         7 */
+                        "%2d",       /*      2      77        63 */
+                        "%3d",       /*      3     777       511 */
+                        "%4d",       /*      4    7777      4095 */
+                        "%5d",       /*      5   77777     32767 */
+                        "%6d"        /*      6  177777     65535 */
+                    };
+
+    for (;;) {
+        while (!isdigit((unsigned char) *cp))
             if (*cp++ == '\0')
                 return;
 
@@ -170,8 +308,12 @@ static void list_process(
     void)
 {
     int             binstart = 0;
+    int             nlist_loc_only = 0;
 
-    assert(isprint((unsigned char) binline[0]));
+#define HAVE_SEQ   (isdigit((unsigned char) binline[offsetof(LSTFORMAT, gap_after_seq) - 1]))
+#define HAVE_LOC   (isdigit((unsigned char) binline[offsetof(LSTFORMAT, pc)            + 5]))
+#define HAVE_WORD1 (isdigit((unsigned char) binline[offsetof(LSTFORMAT, words)         + 0]) && \
+                    /* Ignore .IF lines */ (binline[offsetof(LSTFORMAT, words)         + 6] != '='))
 
     if (LIST(TTM))
         padto(binline, offsetof(LSTFORMAT, words[1]));
@@ -180,7 +322,7 @@ static void list_process(
 
     trunc(listline);
 
-    if (!errline) {
+    if (!errline) {  /* Never pre-process error lines */
 
         /* Handle .NLIST SEQ,LOC,BIN,SRC */
 
@@ -189,14 +331,38 @@ static void list_process(
 
         /* Handle NLIST BEX [BIN] and .NLIST COM */
 
-        if (binline[offsetof(LSTFORMAT, gap_after_seq) - 1] == ' ') {
-            if (!LIST(BIN) || !LIST(BEX))
+        if (!HAVE_SEQ) {
+            if (!LIST(BEX) || !LIST(BIN))
                 return;  /* If no sequence number, suppress the BEX line */
         } else if (!LIST(COM)) {
             if (listline[0] == ';' || listline[0] == '\0')
             /*  if (binline[0] == ' ')  */
                     return;  /* Completely suppress LHS-comment lines and blank lines */
         }
+
+        /* Handle .NLIST ME,MEB */
+
+        if (list_within_exp && !LIST(ME) && LIST(LIS) < 1) {  /* V05.05 treats list_level >= 1 as .LIST ME */
+           if (!LIST(MEB) && !(list_line_act & LIST_FORCE_LISTING))  /* (Optional) -yfl forces .LIST MEB */
+               return;  /* Suppress all source lines within a macro/rept/irp/irpc expansion */
+
+#if TODO
+           /* TODO: Future extension: for .LIST MEBX we do not suppress ME lines which have
+            *       a 'valid' value in WORD1 (e.g. symbol definitions) */
+
+        /* if (LIST(MEBX)) */ {
+               if (!(HAVE_LOC || HAVE_WORD1))
+                   return;  /* If no location and no 'valid; word1, suppress the ME line */
+           }
+#else
+           if (!HAVE_LOC && binline[0] != '-')
+               return;  /* If no location, suppress the ME line (unless forced) */
+#endif
+        }
+
+        /* Handle .NLIST LOC (but .LIST SEQ,BIN) */
+
+        nlist_loc_only = (!LIST(LOC) && LIST(SEQ) && LIST(BIN));
 
         /* Handle .NLIST BIN[,LOC] */
 
@@ -212,34 +378,9 @@ static void list_process(
         if (!LIST(SRC)) {
             listline[0] = '\0';
             trunc(binline);
-            if ( /* binline[0] == ' ' && */
+            if ( /* (binline[0] == ' ' || binline[0] == '\0') && */
                     strlen(binline) < offsetof(LSTFORMAT, pc))
                 return;  /* Completely suppress source lines with only a sequence number */
-        }
-
-        /* Handle .NLIST ME,MEB */
-
-        if (list_within_exp && !LIST(ME)) {
-           if (!LIST(MEB))
-               return;  /* Suppress all source lines within a macro/rept/irp/irpc expansion */
-
-           /* Extension to MACRO-11 we only suppress ME lines which have no digits in the PC and WORDS fields */
-
-           {
-               int len = strlen(binline);
-               int i;
-
-               if (len < offsetof(LSTFORMAT, pc))
-                   return;  /* Suppress non-data source lines within a macro/rept/irp/irpc expansion */
-
-               for (i = offsetof(LSTFORMAT, pc); i < len; i++) {
-                   if (isdigit((unsigned char) binline[i]))
-                       break;
-               }
-
-               if (i >= len)
-                   return;  /* Suppress non-data source lines within a macro/rept/irp/irpc expansion */
-            }
         }
 
         /* Handle .NLIST SEQ[,LOC] */
@@ -255,19 +396,69 @@ static void list_process(
     if (listline[0] == '\0')
         trunc(binline);
 
-    /* Handle .LIST HEX */
+    /* Handle .LIST LD (extension to MACRO-11) and .LIST HEX */
+    /* Remember: if binline has been truncated it will be filled with '\0' */
 
-    if (LIST(HEX))
-        list_oct2hex(&binline[offsetof(LSTFORMAT, pc)]);
+    if (LIST(LD)) {
+        list_oct2dec(&binline[offsetof(LSTFORMAT, words)]);  /* Keep the LOC (PC) octal */
+    } else {
+        if (LIST(HEX))
+            list_oct2hex(&binline[offsetof(LSTFORMAT, pc)]);
+    }
 
     /* Output the line */
 
-    if (binline[0] != '\0')
+    if (binline[binstart] != '\0') {
+        if (symbol_list_locals)
+            if (looked_up_local_sym)
+                fprintf(lstfile, "[$%5d]", lsb);
+            else
+                fputs("        ", lstfile);
+        if (nlist_loc_only) {
+                binline[offsetof(LSTFORMAT, gap_after_seq) + 1] = '\0';
+                fputs(binline, lstfile);
+                binstart = offsetof(LSTFORMAT, words);
+        }
         fputs(&binline[binstart], lstfile);
-    if (listline[0] != '\0')
+    }
+
+    if (listline[0] != '\0') {
         fputs(listline, lstfile);
+    }
+
+    /* If both binline & listline are empty, we will still need an empty line */
     fputc('\n', lstfile);
     list_page_top = 0;
+
+#undef HAVE_SEQ
+#undef HAVE_LOC
+#undef HAVE_WORD1
+
+}
+
+
+/* show_error_line shows a source line on stderr with format:
+ * .LIST SEQ,LOC,BIN,SRC,COM,TTM and .NLIST BEX,LD,HEX */
+
+void show_error_line(  /* Synonym for show_print_line() */
+    void)
+{
+    if (!pass)
+        return;
+
+    if (!build_list())
+        return;
+
+    if (lstfile == stdout)
+        return;
+
+    if (binline[0] == '\0')
+        return;
+
+    if (!isdigit((unsigned char) binline[offsetof(LSTFORMAT, gap_after_seq) - 1]))
+        return;
+
+    fprintf(stderr, "%-*s%.132s\n", offsetof(LSTFORMAT, words), binline, listline);
 }
 
 
@@ -276,10 +467,11 @@ static void list_process(
 void list_flush(
     void)
 {
-    if (dolist()) {
+    if (build_list()) {
+        /* Remember: binline might be empty (but never NULL) */
         if (errline) {
             list_line_act &= ~LIST_SUPPRESS_LINE;  /* Error lines are never suppressed */
-            if (pass == 0) {  /* TODO: Do this on both passes (?) */
+            if (show_error_lines || pass == 0) {   /* TODO: Do this on both passes (?) */
                 int             i;
 
                 /* TODO: Implement error-letters like MACRO-11 (not trivial) */
@@ -288,9 +480,22 @@ void list_flush(
                         break;
                     binline[i] = '*';
                 }
+
+                if (show_error_lines)
+                    show_error_line();
             }
         }
 
+        if (list_line_act & LIST_SUPPRESS_LINE) {
+            if (list_line_act & LIST_FORCE_LISTING) {
+                list_line_act &= ~LIST_SUPPRESS_LINE;  /* Forced-listing lines are never suppressed */
+                if (binline[0] == ' ')
+                    binline[0] = '-';                  /* Flag the line as 'suppressed' but 'forced' */
+            }
+        }
+    }
+
+    if (dolist()) {
         if (!pass)
             list_line_act &= ~LIST_SUPPRESS_LINE;  /* Never suppress lines on pass 1 (for -yl1) */
 
@@ -301,16 +506,20 @@ void list_flush(
                 list_line_act &= ~LIST_PAGE_BEFORE;
                 list_throw_page();
             }
-            list_process();
+            if (binline[0])
+                list_process();
         }
 
-        if (list_line_act & LIST_PAGE_AFTER) {
-            list_line_act &= ~LIST_PAGE_AFTER;   /* Turn it into ... */
+        if (list_line_act & LIST_PAGE_AFTER) {   /* If we want a page throw 'after' we've listed the line ... */
+            list_line_act &= ~LIST_PAGE_AFTER;   /* ... turn it into ... */
             list_line_act |=  LIST_PAGE_BEFORE;  /* ... a LIST_PAGE_BEFORE */
         }
+    }
 
-        listline[0] = '\0';
+    if (build_list()) {
+        list_line_act &= ~(LIST_SUPPRESS_LINE | LIST_FORCE_LISTING);  /* TODO: We shouldn't need this - but we do (!) */
         binline[0]  = '\0';
+        listline[0] = '\0';
     }
 }
 
@@ -342,21 +551,134 @@ static void list_fit(
     }
 }
 
+
+/* list_format_value is used to format and show a computed value with associated flag */
+
+static void list_format_value(
+    STREAM *str,
+    const char *format,
+    unsigned word,
+    char flag)
+{
+    (STREAM *) str;  /* This parameter is currently unused */
+
+//  assert(build_list());  /* TODO: Remove sanity check */
+
+/*  if (build_list())  */ {  /* TODO: Don't need this 'if' around this block - OR remove the checks from the callers */
+        assert(strlen(binline) >= (int)offsetof(LSTFORMAT, gap_after_seq));                /* binline long enough? */
+        assert(isdigit((unsigned char) binline[offsetof(LSTFORMAT, gap_after_seq) - 1]));  /* Has a sequence number? */
+        padto(binline, offsetof(LSTFORMAT, words));
+        sprintf(&binline[offsetof(LSTFORMAT, words)], format, word & 0177777);
+        sprintf(binline + strlen(binline), "%c", flag);
+    }
+}
+
+
+/* list_symbol is used to show a symbol value and the 'relative-flag' */
+
+void list_symbol(
+    STREAM *str,
+    SYMBOL *sym)
+{
+    (STREAM *) str;  /* This parameter is currently unused */
+
+    if (build_list()) {
+        /* Print the symbol value and relative-flag */
+        if (sym->section->flags & PSECT_REL)
+            list_format_value(str, "%6.6o", sym->value, '\'');
+        else
+            list_format_value(str, "%6.6o", sym->value, '\0');
+    }
+}
+
+
 /* list_value is used to show a computed value */
 
 void list_value(
     STREAM *str,
     unsigned word)
 {
-    if (dolist()) {
+    (STREAM *) str;  /* This parameter is currently unused */
+
+    if (build_list()) {
         /* Print the value and go */
-        binline[0] = 0;
-        sprintf(binline, "%*s%*d         %6.6o", (int)SIZEOF_MEMBER(LSTFORMAT, flag), "",
-                (int)SIZEOF_MEMBER(LSTFORMAT, line_number), str->line, word & 0177777);
+        list_format_value(str, "%6.6o", word, '\0');
     }
 }
 
-/* Print a word to the listing file */
+
+/* list_value_if is used to show a computed value for a .IF or .IFxx */
+
+void list_value_if(
+    STREAM *str,
+    unsigned word)
+{
+    (STREAM *) str;  /* This parameter is currently unused */
+
+    if (build_list()) {
+        /* Print the value and go */
+        list_format_value(str, "%6.6o", word, '=');
+    }
+}
+
+
+/* list_3digit_value is used to show a '3-digit' computed value */
+/* This is similar to list_value() except only the first 3 digits of value will be zero-filled */
+/* Also, if the value is < 0 it will be shown as a +ve value with a '-' flag */
+
+void list_3digit_value(
+    STREAM *str,
+    unsigned word)
+{
+    (STREAM *) str;  /* This parameter is currently unused */
+
+    if (build_list()) {
+        if (word & 0x8000)
+            list_format_value(str, "%6.3o", 0x8000 - (word & 0x7fff), '-');
+        else
+            list_format_value(str, "%6.3o", word, '\0');
+    }
+}
+
+
+/* list_short_value is used to show a 'short' computed value */
+/* This is similar to list_value() except the value will not be zero-filled */
+/* Also, if the value is < 0 it will be shown as a +ve value with a '-' flag */
+
+#if NODO  /* Possible future use ... */
+void list_short_value(
+    STREAM *str,
+    unsigned word)
+{
+    (STREAM *) str;  /* This parameter is currently unused */
+
+    if (build_list()) {
+        if (word & 0x8000)
+            list_format_value(str, "%6o", 0x8000 - (word & 0x7fff), '-');
+        else
+            list_format_value(str, "%6o", word, '\0');
+    }
+}
+#endif
+
+
+/* list_short_value_if is used to show a 'short' computed value for .IFT/.IFF/.IFTF and .IIF */
+/* This is similar to list_value() except the value will not be zero-filled */
+/* Also, the value flag will be set to '=' (as .IF) */
+
+void list_short_value_if(
+    STREAM *str,
+    unsigned word)
+{
+    (STREAM *) str;  /* This parameter is currently unused */
+
+    if (build_list()) {
+        list_format_value(str, "%6o", word, '=');
+    }
+}
+
+
+/* list_word - print a word to the listing file */
 
 void list_word(
     STREAM *str,
@@ -365,7 +687,7 @@ void list_word(
     int size,
     char *flags)
 {
-    if (dolist()) {
+    if (build_list()) {
         list_fit(str, addr);
         if (size == 1)
             sprintf(binline + strlen(binline), "   %3.3o%1.1s ", value & 0377, flags);
@@ -375,19 +697,81 @@ void list_word(
 }
 
 
-/* Print just a line with the address to the listing file */
+/* list_location - print just a line with the address to the listing file */
 
 void list_location(
     STREAM *str,
     unsigned addr)
 {
-    if (dolist()) {
+    if (build_list()) {
         list_fit(str, addr);
     }
 }
 
 
+/* report_generic - reports warning, error, and fatal messages  */
+/* Fatal messages are listed on both passes (if we didn't exit) */
+void report_generic(
+    unsigned type,
+    STREAM *str,
+    char *fmt,
+    ...)
+{
+    va_list         ap;
+    char           *name = "**";
+    int             line = 0;
+    const char     *mess;
 
+    report_errcnt++;
+    if (enabl_debug)
+        UPD_DEBUG_SYM(DEBUG_SYM_ERRCNT, report_errcnt);
+
+    errline++;
+    switch (type) {
+
+    case REPORT_WARNING:
+        if (!pass && list_pass_0 < 2)
+            return;                    /* Don't report now */
+        mess = "WARNING";
+        break;
+
+    case REPORT_ERROR:
+        if (!pass && list_pass_0 < 2)
+            return;                    /* Don't report now */
+        mess = "ERROR";
+        break;
+
+    case REPORT_FATAL:
+        mess = "FATAL";
+        break;
+
+    default:
+        mess = "BADERR";               /* Should never happen */
+    }
+
+    if (str) {
+        name = str->name;
+        line = str->line;
+    }
+
+    if (list_line_act & LIST_PAGE_BEFORE)
+        list_throw_page();
+
+    fprintf(stderr, "%s:%d: ***%s ", name, line, mess);
+    va_start(ap, fmt);
+    vfprintf(stderr, fmt, ap);
+    va_end(ap);
+
+    if (lstfile && lstfile != stdout) {
+        fprintf(lstfile, "%s:%d: ***%s ", name, line, mess);
+        va_start(ap, fmt);
+        vfprintf(lstfile, fmt, ap);
+        va_end(ap);
+    }
+}
+
+
+#if NODO  /* See listing.h */
 /* reports errors */
 void report(
     STREAM *str,
@@ -405,7 +789,7 @@ void report(
     errline++;
     if (!pass && list_pass_0 < 2)
         return;                        /* Don't report now. */
-    
+
     if (str) {
         name = str->name;
         line = str->line;
@@ -426,3 +810,4 @@ void report(
         va_end(ap);
     }
 }
+#endif /* NODO */

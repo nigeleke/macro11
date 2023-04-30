@@ -190,6 +190,7 @@ MLB            *mlb_rt11_open(
     /* Shift occupied directory entries to the front of the array
        before sorting */
     {
+        unsigned long   max_filepos;
         int             j;
 
         for (i = 0, j = nr_entries; i < j; i++) {
@@ -237,9 +238,6 @@ MLB            *mlb_rt11_open(
         /* Now, allocate my in-memory directory */
         mlb->directory = memcheck(malloc(sizeof(MLBENT) * mlb->nentries));
         memset(mlb->directory, 0, sizeof(MLBENT) * mlb->nentries);
-
-        { /**/
-        unsigned long   max_filepos;
 
         fseek(mlb->fp, 0, SEEK_END);
         max_filepos = ftell(mlb->fp);
@@ -292,7 +290,6 @@ MLB            *mlb_rt11_open(
                     mlb->directory[j].length);
 #endif
         }
-        } /**/
 
         free(buff);
     }

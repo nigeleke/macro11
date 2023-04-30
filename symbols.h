@@ -21,7 +21,7 @@ typedef struct section {
     unsigned        flags;      /* Flags, defined in object.h */
     unsigned        pc;         /* Current offset in the section */
     unsigned        size;       /* Current section size */
-    unsigned        sector;     /* Used for complex relocation, and naught else */
+    unsigned        sector;     /* Used for complex relocation, and identification (psect number) */
 } SECTION;
 
 /* Add, or update MACRO-11 debug symbols (only used if -yd [enabl_debug] is specified)
@@ -78,29 +78,34 @@ typedef struct dirarg {
     unsigned        flags;             /* Directive-argument flags */
 #define ARGS_DSABL_ENABL       1
 #define ARGS_NLIST_LIST        2
-/* ...                                 // Reserve space for types = 4, 8, 16 */
-#define ARGS_ALL_TYPES        31
+/* ...                                 // Reserve space for types = 4 and 8 */
+#define ARGS_VISIBLE          31
 
 #define ARGS_NO_FLAGS          0
-#define ARGS_IGNORE_THIS      32
-#define ARGS_NO_FUNCTION      64
-#define ARGS_NOT_IMPLEMENTED 128
-#define ARGS_NOT_SUPPORTED   256
+#define ARGS_MUST_SUPPORT     16       /* dump_dirargs = '!' */ /* -e and -d set this */
+#define ARGS_NO_FUNCTION      32       /* dump_dirargs = '.' */
+#define ARGS_HIDDEN           64       /* dump_dirargs = ';' */
+#define ARGS_IGNORE_THIS     128       /* dump_dirargs = '#' */ /* -dc sets this */
+#define ARGS_NOT_IMPLEMENTED 256       /* dump_dirargs = '-' */
+#define ARGS_NOT_SUPPORTED   512       /* dump_dirargs = '*' */
+
 } DIRARG;
 
 
 enum enabl_list_args {
     E_ABS,
     E_AMA,
+    E_BMK,  /* MACRO regression benchmark [undocumented] */
     E_CDR,
     E_CRF,
+    E_DBG,  /* ISD Record support (DEBUG-16 or MpPASCAL) [undocumented] */
     E_FPT,
     E_GBL,
     E_LC,
     E_LCM,
     E_LSB,  /* Requires special processing when changed */
     E_MCL,
-    E_PIC,  /* m11 extension */
+    E_PIC,  /* m11 extension but MACRO-11 has it -- 'disabled' in the source code */
     E_PNC,
     E_REG,
 
@@ -110,6 +115,7 @@ enum enabl_list_args {
     L_CND,
     L_COM,  /* Subset of SRC */
     L_HEX,
+    L_LD,   /* Seems to only be a flag and unused otherwise [undocumented] */
     L_LOC,
     L_MC,
     L_MD,
@@ -293,7 +299,7 @@ enum instruction_ops {
     I_XFC    = 0076700,
     I_XOR    = 0074000,
 
-    /* CIS - Commercial Instruction Set */
+    /* CIS - Commercial Instruction Set (076000-076177) */
 
     I_CIS_I  = 0000100,  /* Inline arguments */
     I_CIS_P  = 0000020,  /* Packed instead of Numeric */
@@ -326,7 +332,7 @@ enum instruction_ops {
     I_SUBN   = 0076051,
     I_SUBP   = 0076071,
 
-    /* FPU - Floating-point */
+    /* FPU - Floating-point (170000-177777) */
 
     I_ABSD   = 0170600,
     I_ABSF   = 0170600,
@@ -349,6 +355,8 @@ enum instruction_ops {
     I_LDEXP  = 0176400,
     I_LDF    = 0172400,
     I_LDFPS  = 0170100,
+    I_LDSC   = 0170004,
+    I_LDUB   = 0170003,
     I_MODD   = 0171400,
     I_MODF   = 0171400,
     I_MULD   = 0171000,
@@ -361,6 +369,7 @@ enum instruction_ops {
     I_SETL   = 0170012,
     I_STA0   = 0170005,
     I_STB0   = 0170006,
+    I_STQ0   = 0170007,
     I_STCDF  = 0176000,
     I_STCDI  = 0175400,
     I_STCDL  = 0175400,
@@ -428,6 +437,7 @@ typedef struct symbol_iter {
 extern int      symbol_len;                  /* max. len of symbols. default = 6 */
 extern int      symbol_allow_underscores;    /* allow "_" in symbol names */
 extern int      symbol_list_locals;          /* list local symbols in the symbol table */
+extern int      looked_up_local_sym;         /* TRUE if the current source line looked up a local symbol */
 
 extern DIRARG   enabl_list_arg[ARGS__LAST];  /* .ENABL/.DSABL and .LIST/.NLIST arguments */
 

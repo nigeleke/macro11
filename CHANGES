@@ -1,6 +1,488 @@
 
 ----------- Mike Hill's entries ------------------
 
+28-Apr-2023: Mike Hill
+        Add '-s' command line option to prepend source lines
+        - stream2.h
+          Declare inject_source() and stack_injected_source()
+        - stream2.c
+          Add a global buffer pointer 'inject_buf'
+          Define inject_source() and stack_injected_source()
+        - macro11.c
+          #include "stream2.h"
+          Add 2 parameters to prepare_pass()
+            Use inject_source() and stack_injected_source() to stack the '-s' statements(s)
+            Ditto for the '-yd' lines - instead of fprintf()
+          Update 'usage'
+          Parse the '-s' option(s)
+          Catch too many input files (MAX_FILES)
+          Allow no <inputfile> if '-s' provided
+        Check .IRP and .IRPC syntax better if -strict or -stringent
+        - rept_irpc.c
+          We now warn if .IRP[C] X (-strict) or .IRP[C] X, if '<...>' are not used (-stringent)
+        Check length of PROCESSED lines (e.g. expanded from macros) if -stringent
+        - assemble.c
+          Warn if the processed line is too long (> 132)
+          Added "[ignored]" to "Directive 'xxx' does not accept arguments"
+            Re-ran tests (-ym11 -strict and -stringent): test-blkb.mac (expected)
+        Updated date of version 0.8.5 to "(28 Apr 2023)"
+        - macro11.h
+
+27-Apr-2023: Mike Hill
+        Create function to pass arbitrary filename/linenumber to report_xxx()
+        - stream2.h
+          Declare stream_here()
+        - stream2.c
+          Define stream_here()
+        - assemble.c
+          Change P_REM to use stream_here()
+          Also, while we're at it, only show ".ENDR <name>" warning if -strict
+        - macros.c
+          Change read_body() to use stream_here()
+        - macro11.c
+          Use stream_here() to report "Unterminated conditional" & append "(here)"
+            Re-ran tests (-ym11 -strict and -stringent): exec.m11 (expected)
+        Fix string overflow if -ysl > 6
+        - macros.c
+          new_macro_stream() needs to allow space for SYMMAX_MAX (use a constant for efficiency) in the macro name
+
+25-Apr-2023: Mike Hill
+        Use report_fatal() instead of fprintf(stderr, ...)
+        - stream2.c
+        Enable dump_all_macros() with DEBUG_MACROS
+        - macros.h
+          #define DEBUG_MACROS 0
+          Declare dump_all_macros()
+        - macros.c
+          Put dumpmacro() and dump_all_macros() behind #if DEBUG_MACROS
+        - macro11.c
+          #include "macros.h"
+          #if DEBUG_MACROS ... #endif
+
+24-Apr-2023: Mike Hill
+        Implement .NLIST LOC with .LIST SEQ,BIN
+        - listing.c
+          Put 'nlist_loc_only' into list_process() and segregate the list line on output
+        At last, we clean up the { ... } blocks we inserted and marked with /**/ on 04-Jan-2023
+        - assemble.c
+        - macro11.c
+        - mlb-rsx.c
+        - mlb-rt11.c
+        - parse.c
+        - util.c
+        Do some of the [easier] TODOs
+        - assemble_aux.c
+          Use report_fatal() instead of fprintf() for duplicate global symbols (-ysl > 6)
+        - symbols.c
+          Use report_fatal() instead of report_err() so we see the messages on both passes
+        - macros.c
+          Changed message to "Body of '?' (here) has missing .ENDM" and made it fatal
+        Removed some of the '#if TODO' unused/old code
+        - assemble.c
+        - extree.c
+        - listing.c
+        - macro11.c
+        - parse.c
+
+22-Apr-2023: Mike Hill
+        For .LIST MEB return to the way MACRO-11 does it (for now)
+        - listing.c
+          Add #define HAVE_SEQ, HAVE_LOC, and HAVE_WORD1 to make the code easier to read
+          We now only check the location field has a valid digit
+        For .LIST LD keep the PC as an octal value (symbol table will all be decimal if .LIST LD in effect)
+        - listing.c
+          Only translate the 'words' to decimal when calling list_oct2dec()
+        For .IF and .IFT/.IFF/.IFTF and .IFF (false) put '=' in the flags field
+        - listing.h
+          Add list_value_if() and rename list_value_short() to list_value_short_if()
+        - listing.c
+          Add list_value_if() and rename list_value_short() to list_value_short_if()
+        - assemble.c
+          Call list_short_value_if() instead of list_short_value() and list_value_if() at P_IF:
+          Re-ran tests (-ym11 -strict and -stringent) -- differences (expected) in:
+            test-enabl-lcm.mac, endm, if, prec, psect,
+            at.sml, code.m11, exec, expr, fltg, getl, lout, mac, macro, misc, often, pst, srch, xlat
+
+20-Apr-2023: Mike Hill
+        Implement report_warn() etc.
+        - listing.h
+          Use new report_xxx() definitions and declare report_generic()
+        - listing.c
+          report_generic() is similar to report() but prints "WARNING", "ERROR", and { "FATAL" = also on pass 1 }
+        - assemble.c
+          Changed two OC_MARK errors to ERROR instead of WARNING
+        - assemble_aux.c
+          Appended "[.EVEN implied]" to ".WORD on odd boundary" message
+        Re-ran tests (-ym11 -strict and -stringent) -- differences (expected) in:
+          test-asciz.mac, blkb, if, include, jmp, opcodes, packed, prec, ua-pl, word-comma, exec.m11
+        Rename ARGS_ALL_TYPES to ARGS_VISIBLE (to make its function clearer)
+        - symbols.h, symbols.c, macro11.c
+
+19-Apr-2023: Mike Hill
+        Implement command-line options -p1 and -p2 (pass1 or pass2 only)
+        - macro11.c
+          Add execute_p1 and execute_p2 (default TRUE)
+          Update 'usage'
+          Init errcount and report_errcnt_p1 to 0
+          Move dump_dirargs() outside prepare_pass()
+          In prepare_pass() - lookup_sym(DEBUG_SYM_ERRCNT) instead of if (!pass)
+          Only execute the relevant passes and show the relevant messages
+        Fix .REM /TEXT/ [closing quote on same line] when .NLIST COM is in effect
+        - assemble.c
+          We now return early within P_REM if needed
+
+18-Apr-2023: Mike Hill
+        Also support -a0 for .NARG .NCHR .NTYPE .PACKED
+        - assemble.c
+          New routine abs_section_addr()
+          Call this wherever we want a 'variable' absolute_section or add a /* TODO */ if unsure
+        - assemble_aux.c and parse.c
+          Add a /* TODO */ wherever absolute_section is referenced (no code changes)
+        Tweaked the listing level output
+        - assemble.c
+          Changed the limits for P_NLIST/P_LIST
+          Re-ran tests -- differences (expected) in: test-listing.mac, at.sml, code.m11, ...
+        Show the count of characters in the .IRPC assigned to the symbol
+        - rept_irpc.c
+          list_value() in expand_irpc()
+          Re-ran tests -- differences (expected) in: exec.m11, expr, fltg, getl, lout, mac, misc, srch, xlat
+        Make -e and -d suppress the "unsupported" error message (e.g. for PIC if -stringent)
+        - symbols.h
+          #define ARGS_MUST_SUPPORT
+        - symbols.c
+          Add '!' to  ARG_FLAGS()
+          Change ARGS_IGNORE_THIS to ARGS_MUST_SUPPORT for the STRINGENT stuff
+          Remove the STRINGENT tests from list_symbol_table() and list_section()
+        - listing.c
+          Remove the STRINGENT test from list_process() for LIST(LD)
+        - macro11.c
+          Set ARGS_MUST_SUPPORT if -e or -d
+        Make sure that line-suppression is cleared after listing a line (because we missed it somewhere)
+        - listing.c
+          list_flush() now clears the LIST_SUPPRESS_LINE + LIST_FORCE_LISTING flag after listing line
+
+17-Apr-2023: Mike Hill
+        .PSECT ABS,CON will override '-a0' for that section (you never know if you'll want it somewhen)
+        - assemble.c
+        Correctly handle ": :" and "= [=] [:]" e.g. "A : : NOP" or "A = = : 0"
+        - parse.c
+          skipwhite() in get_op() and also loop for multiple labels on a line (even if -stringent)
+        - assemble.c
+          Near 'reassemble:' skipwhite() after ':' and '=' (unless -stringent)
+
+16-Apr-2023: Mike Hill
+        Fix (and enhance) V05.03 change to put ABS symbol in ABS section referencing '.' into the current section
+        - assemble_globals.h
+          Declare abs_0_based
+        - assemble_globals.c
+          Define abs_0_based = 0
+        - macro11.c
+          Add '-a0' command-line option
+        - assemble.c
+          Note that with '-a0' and 'ABS=.' the object file may now change (use: dumpobj -nosort)
+          Near 'reassemble:' we check for '.' and create a new ex tree with current_pc
+          We also now assign absolute symbols to the current PSECT if it is ABS and '-a0'
+          Re-ran tests (with -a0 and without) -- differences (expected) in: test-reg.mac
+        Change -ylls to list "[$nnnnn]" instead of "[L=nnnn]"
+        - listing.c
+        Change -ylls to also show the blank section number in the symbol table (normally suppressed as per V05.05)
+        - symbols.c
+        If -sp then .PRINT lines should always appear in the listing
+        - assemble.c
+        .LIST and .NLIST should never be listed if within a macro expansion (ignore limits we set below)
+        - assemble.c
+          Re-ran tests -- differences (expected) in: exec.m11, lout
+        If no TOC and we've seen a .TITLE on pass 1, print a title string at the top of the listing (unless -e BMK)
+        - listing.h
+          Declare list_title_line()
+        - listing.c
+          #include <time.h> and #include "macro11.h"
+          Define list_title_line() and move code from P_SBTTL in assemble.c
+        - assemble.c
+          Remove #include <time.h> and "macro11.h"
+          Move title output from assemble.c to listing.c
+        - macro11.c
+          Call list_title_line() on pass 2 (if TOC not shown)
+        Report a warning if .IRPC has > 124 characters (-stringent)
+        - rept_irpc.c
+        Move MAX_FILE_LINE_LENGTH
+        - From assemble.h to assemble_globals.h
+
+14-Apr-2023: Mike Hill
+        For -yfl [etc.] put a '-' in listing column 1 if line would have been suppressed but isn't
+        - listing.c
+          Add this to list_flush()
+        Only list .LIST and .NLIST outside macro calls unless not 'usual'
+        - In P_LIST: check for !within_macro_expansion()
+
+13-Apr-2023: Mike Hill
+        Increase field widths for psect-numbers (just in case [unlikely] we have > 0777 of them)
+        - symbols.c
+        Make list_short_value() & list_3digit_value() signed (because we want it for .NLIST later on)
+        - listing.c
+          We now put '-' in the flag field if < 0 (e.g. 177777 -> '   001-')
+        Add listing action of LIST_FORCED_LISTING to force the listing of the current line (overrides LIST_SUPPRESS_LINE)
+        - listing.h
+          Declare LIST_FORCED_LISTING and listing_forced
+          #define MUST_LIST_THIS_LINE() similar to DONT_LIST_THIS_LINE()
+        - listing.c
+          Define listing_forced and use LIST_FORCE_LISTING in list_flush()
+          Set list_line_act '&= ~LIST_FORCE_LISTING' and '|= listing_forced' in list_source()
+        - macro11.c
+          Add -yfl (force listing) command-line option and update 'usage'
+        - assemble.c
+          P_LIST & P_NLIST without parameters always lists line for '-yd' and not for 'usual' .LIST or .NLIST levels
+        Make the list_level match the docu (6.1.1)
+        - symbols.c
+          Set [E_LIS] to 0 instead of 1
+        - assemble.c
+          Change P_SBTTL to use new 'list-range' of >= 0
+          Change P_NLIST & P_LIST accordingly
+        - listing.c
+          Change dolist() to use new 'list-range' of >= 0 and check for LIST_FORCE_LISTING
+          Change handling of LIST(ME) in list_process() -> treat '(list_level >= 0) as .LIST ME
+        - macros.c
+          Change read_body() to use new 'list-range' of >= 0
+          Re-ran tests -- differences (expected) in: test-listing.mac, at.sml, code.m11, ... exec, ... lout
+        Suppress extra listing line at EOF if .END not seen
+        - stream2.c
+          LIST_SUPPRESS_LINE if EOF and len==0 in file_getline()
+            Also, if EOF: increment sequence number
+          Re-ran tests -- differences (expected) in almost ALL files
+
+12-Apr-2023: Mike Hill
+        Put in the stubs for .CROSS & .NOCROSS without parameters
+        - assemble.c
+          Move cases for P_CROSS & P_NOCROSS from (1) to (4)
+          Update E_CRF if we should
+        Add listing 3-digit values to the 'value' column [like list_short_value() etc.]
+        - listing.h
+          Declare list_3digit_value()
+        - listing.c
+          Define list_3digit_value() similar to list_short_value()
+        - assemble.c
+          Change listing of L_LIS value (.LIST/.NLIST) to 3-digits
+          Re-ran tests -- differences (expected) in: test-listing.mac, exec.m11
+            [at.sml, code.m11, debug, errs, expr, fltg, getl, lout, mac, macro, mist, often, pst, srch, syscalls, xlat, xpcor]
+          List the 3-digit psect number for .ASECT, .CSECT, .PSECT, .SAVE, and .RESTORE
+          Re-ran tests -- differences (expected) in: test-backpatch.mac, enabl-ama, jmp, psect, reg, reloc, ua-pl
+            code.m11, debug, errs, exec, ...
+
+11-Apr-2023: Mike Hill
+        Put the version creation date into the -v string when -yd is specified first
+        - macro11.h
+          #define THIS_VERSION in addition to VERSIONSTR
+        - macro11.c
+          If -yd is followed by -v output THIS_VERSION before outputting VERSIONSTR
+        Truncate listing lines which are longer than a certain length
+        - listing.h
+          #define MAX_LISTING_LINE_LEN 148 (120 would match V05.05)
+        - listing.c
+          Use MAX_LISTING_LINE_LEN in trunc()
+        Handle file-input lines which are too long (-strict) and implement .ENABL CDR (-e CDR)
+        - symbols.c
+          Set the correct flag for E_CDR
+        - stream2.h
+          Declare from_file_stream()
+        - stream2.c
+          Define from_file_stream(str) to return TRUE if 'str' is a file_stream
+        - assemble.h
+          #define MAX_FILE_LINE_LENGTH 132
+        - assemble.c
+          Use from_file_stream() and check line length against MAX_FILE_LINE_LENGTH (first, like RSX)
+          If ENABL(CDR) truncate the input line after 72 characters
+        - listing.c
+          Truncate show_error_line() at 132 characters (to avoid VERY long errors with -se or -sp)
+
+09-Apr-2023: Mike Hill
+        Fix bug in .REPT where a count of > 077777 would really [try to] repeat this many times
+        - rept_irpc.c
+          expand_rept() now checks bit 15 of the repeat count
+        If .IIF is FALSE, show the flag '0' in the value column (a-la .IFT etc.)
+        - assemble.c
+          P_IIF: Add a call to list_short_value()
+          Re-run all the tests -- differences (expected) in:
+            .mac: test-enabl-lcm, test-if, test-psect
+            .m11: exec, lout, macro, pst, xlat
+        Add ARGS_HIDDEN as a DIRARGS flag
+        - symbols.h
+          #define it
+        - symbols.c
+          dump_dirargs() shows it as ';'
+          Set BMK and LD to HIDDEN
+        Add the LSB number to the LHS of the listing for -ylls
+        - symbols.h
+          Declare int looked_up_local_sym
+        - symbols.c
+          Define looked_up_local_sym
+          Set looked_up_local_sym to TRUE for local symbols in lookup_sym()
+        - listing.c
+          Set looked_up_local_sym to FALSE in list_source()
+          If -ylls and looked_up_local_sym then list the 'lsb' as "[L=xxxx]" at the LHS
+        - assemble.c
+          P_ENABL LSB & P_DSABL LSB set looked_up_local_sym to TRUE
+          P_DSABL now does not start a new LSB unless '-relaxed' (see docu section 3.5 for the reason)
+          Disable (#if DEBUG_LSB) "LSB:" debugging in get_next_lsb()
+        - parse.c
+          Also disable (#if DEBUG_LSB) "LSB:" debugging in get_symbol()
+        - macros.c
+          expandmacro() no longer resets the local symbol range for '?' arguments (30000$ ...) when the LSB changes
+        - macro11.c
+          last_locsym = START_LOCSYM (without the '- 1' at the end)
+        Re-run all the tests -- differences (expected) in:
+          .m11: exec, expr, fltg, lout, mac, xlat
+        Support relative flag (') when listing symbolic values
+        - listing.h
+          Declare list_symbol()
+        - listing.c
+          #include "object.h"
+          Add the list_symbol() function
+        - assemble.c
+          Call list_symbol() where necessary (near reassemble: and P_PRINT & P_END)
+        Re-run all the tests -- differences (expected) in:
+          .mac: test-backpatch
+          .m11: exec, lout, macro
+        Change places where '#if 0' really means '#if TODO' to ... 'TODO' (and ... 'NODO' = we know we don't want to do it)
+        - util.h
+          #define NODO 0
+          #define TODO 0
+        - assemble.c, assemble_aux.c, extree.c, listing.c, macro11.c, macros.c, parse.c
+          Replace '#if 0' with either '#if TODO' or '#if NODO'
+
+08-Apr-2023: Mike Hill
+        Clean up symbol-table printf formats etc.
+        - symbols.c
+        For .PRINT use '-sp' instead of '-se'
+        - listing.h
+          Declare show_print_lines and #define show_print_line() show_error_line()
+        - listing.c
+          Define show_print_lines
+        - macro11.c
+          Add '-sp' and update 'usage'
+        - assemble.c
+          Changed the P_PRINT code to use show_print_line()
+          Also changed "Argument to .RADIX" error message from "(%d)" to "(%d.)"
+        Enable both list_location() and list_value() to be used on the same listing-line
+        - listing.c
+          Add a new routine list_format_value() ready for handling flags
+          Call list_value_flags() from list_value() and list_short_value()
+          Re-run all the tests -- differences (expected) in:
+            .m11: getl, lout, mac, xlat
+        - assemble.c
+          Call list_location() in P_PRINT
+          Join P_BYTE and P_WORD together
+          Enable .BLKB & .BLKW to show the byte/word count in the value field
+          Re-run all the tests -- differences (expected) in:
+            .mac: test-backpatch, test-blkb, test-bsl-mac-arg
+            .m11: code, debug, expr, fltg, getl, lout, mac, macro, misc, srch, xlat, xpcor
+
+07-Apr-2023: Mike Hill
+        'Misuse' .[N]LIST LD to 'list decimal' - similar to '.[N]LIST HEX'
+          Ignored if -stringent or -ym11 else takes precidence over .LIST HEX
+        - symbols.c
+          Add a 3rd format string to list_symbol_table() and list_section()
+        - listing.c
+          Add a new function list_oct2dec() a-la list_oct2hex() and call it from list_process()
+        Add command line option '-se' to show error lines after error messages
+        - listing.h
+          Declare show_error_lines and show_error_line()
+        - listing.c
+          Define show_error_lines
+          Add function build_list() similar to can_list() and dolist() to support show_error_lines
+            Replace some calls to can_list() or dolist() with build_list()
+          Add function show_error_line() -> format is always .LIST SEQ,LOC,BIN,SRC,COM,TTM and .NLIST BEX,LD,HE
+          Change how list_process() detects 'BEX' lines (in case we one-day show '*' for errors)
+          list_flush() now also shows the line in error on stderr if '-se'
+        - macro11.c
+          Add '-se' and update 'usage' (and edited the usage text a little)
+        - assemble.c
+          P_PRINT now shows the .PRINT on stderr if '-se'
+        Fixed symflags() bug and add missing flags
+        - symbols.c
+          'return temp' instead of fp
+          Add 'Weak', 'Undefined', 'Local', 'Implicit_global'
+        Replace some calls to list_value() with list_short_value()
+        - listing.h
+          Declare list_short_value() similarly to list_value()
+        - listing.c
+          Define list_short_value() - exactly like list_value() except the value is NOT zero-filled (test: not even displayed)
+        - assemble.c
+          Enable all related TODO code -- .IFT .IFF .IFTF and .IF DF/NDF/IDN/DIF/B/NB
+            Where we replace list_value() with list_short_value()
+          Replace where necessary -- .IFT .IFF .IFTF and .IF DF/NDF/IDN/DIF/B/NB (currently still TODO)
+          Suppress generation of list_value() if an "Invalid .[I]IF condition" error is generated
+          Re-run tests with list_short_value() display suppressed
+            The only difference is in 'test-if' due to the above suppressed list_value()
+          Enable output of short value in list_short_value() and re-run tests -- differences (expected) in:
+            test-if & test-prec + 2.11BSD-m11: code, exec, expr, fltg, getl, mac, macro, misc, often, pst, xlat
+          All of .IFT .IFF .IFTF and .IF DF/NDF/IDN/DIF/B/NB now show whether code will be generated (0=No, 1=Yes)
+        Re-run all the tests with:
+        - symbols.c
+          list_symbol_table()
+            Use octal section numbers
+            Suppress the section number for the blank section
+            Suppress some trailing spaces
+          list_section()
+            Use octal section numbers
+            If -stringent and -rsx, do not show the "NOSAV" flag
+        - assemble.c
+          .LIST and .NLIST now show the list-level in the 'value' column (six-digit octal)
+        Check for .NTYPE outside macro-call if -stringent
+        - macros.h
+          Added within_macro_expansion()
+        - macros.c
+          Added #include "rept_irpc.h"
+          Added within_macro_expansion()
+        - listing.c
+          Removed #include "rept_irpc.h"
+          Use within_macro_expansion() instead of doing it directly
+        - assemble.c
+          Use within_macro_expansion() and generate warning if .NTYPE is invalid (-stringent)
+
+06-Apr-2023: Mike Hill
+        Initialize title_string on pass 2 (for future use)
+        - macro11.c
+        Make 'list_line_act |= LIST_SUPPRESS_LINE' easier to read
+        - listing.h
+          #define DONT_LIST_THIS_LINE() (list_line_act |= LIST_SUPPRESS_LINE)
+        - assemble.c
+          Replace 'list_line_act |= LIST_SUPPRESS_LINE' with 'DONT_LIST_THIS_LINE()'
+        Support m11 extensions to MACRO-11
+        - assemble_globals.h and assemble_globals.c
+          Add extern int support_m11 (default = 0)
+        - macro11.c
+          Add the '-ym11' command line option (sets support_m11 = 1)
+        - symbols.c
+          Add CNZ (=CLN|CLZ) and .MACR (=.MACRO) and .ENABL/.DSABL PIC (but PIC not implemented)
+        - assemble.c
+          Add all the m11 .PSECT flags (except we do not [yet] zero BSS sections)
+        Fixed some missing casts to (unsigned char) for isdigit()
+        - assemble_aux.c
+        - listing.c
+        Re-run all the tests with:
+          RSX: -stringent    -e BMK -e ME
+          BSD: -strict -ym11 -e BMK -e ME -dc BEX,ME
+            Only some of the BSD listing files differ:
+              There is now a TOC for some of the files
+              No error messages for the .PSECTs with BSD-specific flags
+              The section list after the symbol table has some PSECTs with different [BSD-compatible] flags
+              Which also means the object files are different (but only vary in the PSECT flags)
+
+05-Apr-2023: Mike Hill
+        Changed version to 0.8.5
+        - macro11.h
+        Fixed .NLIST CND bugs (because I didn't test properly when I wrote it)
+        - assemble.c
+          Suppress line BEFORE we parse it when 'suppressed'
+          Suppress .[I]IF DF,NDF,IDN,DIF,B,NB statements too
+          Add code to put the TRUE/FALSE flag for DF,NDF,IDN,DIF,B,NB into the value field (currently disabled)
+        Add missing symbols (LDUB, LDSC, STQ0) and add .ENABL/.DSABL BMK,DBG & .LIST/.NLIST LD
+        - symbols.h & symbols.c
+        Implement .ENABL BMK
+        - assemble.c
+          If .ENABL BMK (or -e BMK) we no longer write the version or date & time on the TOC heading
+          Slightly changed the TOC format to " %6d - %s" (now using SIZEOF_MEMBER() etc.)
+
 04-Apr-2023: Mike Hill
         Detect badly formed .MACROs
         - macros.c
@@ -98,7 +580,7 @@
 01-Apr-2023: Mike Hill
         Further .LIST/.NLIST & .ENABL/.DSABL enhancements
         - symbols.c
-          Changed flags for SEQ,LOC,BIN,HEX in add_dirargs() 
+          Changed flags for SEQ,LOC,BIN,HEX in add_dirargs()
         - listing.h
           Changed LSTFORMAT (again)
         - listing.c
@@ -336,7 +818,7 @@
           Add list_throw_page()
         - stream2.c
           Throw a page between files (command-line or .INCLUDE)
-        
+
 15-Mar-2023: Mike Hill
         Updated report_xxx() for future expansion (see 06-Mar)
         - listing.h
@@ -402,7 +884,7 @@
             Also for .IDENT .INCLUDE .LIBRARY .RAD50 (unless -stringent) and .REM
           Added a TODO for P_REM: to make 'top_here' into a routine in stream2
         - parse.c
-          Fixed ^PX looping 
+          Fixed ^PX looping
             Also fixed ^P<EOL> etc. (started rewriting the case 'p': part) - but need to clean it up
 
 09-Mar-2023: Mike Hill
@@ -472,7 +954,7 @@
           Added a check to store_word()
         Added the symbol value to the listing for .NCHR [always] and .NTYPE [only visible if .LIST ME]
         - assemble.c
-          Changed P_NCHR: & P_NTYPE:  
+          Changed P_NCHR: & P_NTYPE:
 
 04-Mar-2023: Mike Hill
         Disallow '.' used in the wrong context
@@ -504,7 +986,7 @@
         - symbols.c
           Replace ADD_SYM() with 3 new #defines for ADD_SYM_REGISTER, ADD_SYM_PSEUDO, and ADD_SYM_INST
           Sort and align them all within their categories (pseudo sorted by value-text!)
-          
+
 28-Feb-2023: Mike Hill
         Added STRINGENT to check the code against the documentation not the V05.05 assembler
         - assemble_globals.h
@@ -1063,7 +1545,7 @@
         - Very simple .LIST and .NLIST implementation.
         - Add ^pl and ^ph expressions from 2.11BSD's m11.
         - Object-ified macro libraries with an eye to support the .sml
-          files from 2.11BSD's m11. But since the given file does not 
+          files from 2.11BSD's m11. But since the given file does not
           just contain .MACROs (it even contains conditionals) I'm not
           sure how it is supposed to work.
         - Added 2.11BSD/m11 as test files. To make this reasonable, a

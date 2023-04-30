@@ -1,6 +1,7 @@
 /*
- * Routines for reading from an RSX-11 M+ macro library (like RSXMAC.SML)
+ * Routines for reading from an RSX-11M/M-PLUS macro library (like RSXMAC.SML)
  */
+
 /*
 Copyright (c) 2001, Richard Krehbiel
 Copyright (c) 2015, 2017, Olaf Seibert
@@ -146,14 +147,14 @@ DAMAGE.
  *  +------------------------------+------------------------------+
  */
 
-#include <stdio.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "mlb.h"
 #include "rad50.h"
 #include "stream2.h"
-#include "mlb.h"
 #include "util.h"
 
 #define MLBDEBUG_OPEN           0
@@ -488,6 +489,7 @@ BUFFER         *mlb_rsx_entry(
         i = ent->length;
         while (i > 0) {
             int length;
+            int padded;
 
 #if MLBDEBUG_ENTRY
             fprintf(stderr, "file offset:$%lx\n", (long)ftell(mlb->fp));
@@ -502,8 +504,7 @@ BUFFER         *mlb_rsx_entry(
 #endif
 
             /* Odd lengths are padded with an extra 0 byte */
-            { /**/
-            int padded = length & 1;
+            padded = length & 1;
 
             if (length > i) {
                 fprintf(stderr, "line length %d > remaining archive member %d\n", length, i);
@@ -530,7 +531,6 @@ BUFFER         *mlb_rsx_entry(
 #endif
                 i--;
             }
-            } /**/
         }
     } else {
 #if MLBDEBUG_ENTRY
@@ -574,14 +574,11 @@ void mlb_rsx_extract(
         buf = mlb_entry(mlb, mlb->directory[i].label);
         if (buf != NULL) {
             char *suffix = mlb->is_objlib ? "OBJ" : "MAC";
+            int   length = buf->length;
 
             sprintf(name, "%s.%s", mlb->directory[i].label, suffix);
             fp = fopen(name, "w");
-            { /**/
-            int length = buf->length;
-
             fwrite(buf->buffer, 1, length, fp);
-            } /**/
             fclose(fp);
             buffer_free(buf);
         }

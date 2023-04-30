@@ -37,21 +37,25 @@ DAMAGE.
 
 */
 
-#include <stdio.h>
-#include <stddef.h>
-#include <stdlib.h>
-#include <string.h>
 #include <ctype.h>
 #include <stdarg.h>
-
-#include "listing.h"
-#include "util.h"
+#include <stddef.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "stream2.h"
 
+#include "assemble_globals.h"
+#include "listing.h"
+#include "util.h"
+
+
 /* GLOBAL VARIABLES */
 
-int             stack_depth = 0;  /* The current stack depth */
+int             stack_depth = 0;    /* The current stack depth */
+static BUFFER  *inject_buf = NULL;  /* Global inject-buffer */
+
 
 /* BUFFER functions */
 
@@ -283,8 +287,8 @@ STREAM         *new_buffer_stream(
 static char    *file_getline(
     STREAM *str)
 {
-    int             i,
-                    c;
+    int             len,
+                    ch;
     FILE_STREAM    *fstr = (FILE_STREAM *) str;
 
     if (fstr->fp == NULL)
@@ -300,35 +304,36 @@ static char    *file_getline(
      *     They may NOT appear at the beginning of a line containing other characters.
      *     They may also NOT be embedded within a line.
      *     Else they will cause the 'I' error and be replaced by '?' in the listing.
-     * RT-11 treats these characters the same as CR/LF */
+     * RT-11 treats these characters the same as CR/LF (but throws page for ^L). */
 
     /* Skip any leading '\f' or '\v' on the line */
 
-    while (c = fgetc(fstr->fp), (c == '\f' || c == '\v'))
-        if (c == '\f')
+    while (ch = fgetc(fstr->fp), (ch == '\f' || ch == '\v'))
+        if (ch == '\f')
             list_line_act |= LIST_PAGE_BEFORE;
 
     /* Read single characters, end of line when '\n' or '\f' or '\v' hit */
 
-    i = 0;
-    while (c != '\n' && c != '\f' && c != '\v' && c != EOF) {
-        if (c != '\0' && c != '\r')  /* Don't buffer NUL or CR */
-            if (i < STREAM_BUFFER_SIZE - 2)
-                fstr->buffer[i++] = (char) c;
-        c = fgetc(fstr->fp);
+    len = 0;
+    while (ch != '\n' && ch != '\f' && ch != '\v' && ch != EOF) {
+        if (ch != '\0' && ch != '\r')  /* Don't buffer NUL or CR */
+            if (len < STREAM_BUFFER_SIZE - 2)
+                fstr->buffer[len++] = (char) ch;
+        ch = fgetc(fstr->fp);
     }
 
-    if (c == '\f')
+    if (ch == '\f')
         list_line_act |= LIST_PAGE_AFTER;
 
-    if (i == 0 && (list_line_act & (LIST_PAGE_BEFORE | LIST_PAGE_AFTER)))
-        list_line_act |= LIST_SUPPRESS_LINE;
+    if (len == 0)
+        if (ch == EOF || (list_line_act & (LIST_PAGE_BEFORE | LIST_PAGE_AFTER)))
+            DONT_LIST_THIS_LINE();
 
-    fstr->buffer[i++] = '\n';          /* Silently transform trailing
-                                          formfeeds and vertical-tabs into newlines */
-    fstr->buffer[i] = '\0';
+    fstr->buffer[len++] = '\n';        /* Silently transform trailing
+                                        * formfeeds and vertical-tabs into newlines */
+    fstr->buffer[len] = '\0';
 
-    if (c == '\n')
+    if (ch == '\n' || ch == EOF)
         fstr->stream.line++;           /* Count a line */
 
     return fstr->buffer;
@@ -386,6 +391,16 @@ STREAM         *new_file_stream(
     return &str->stream;
 }
 
+/* Return TRUE if the stream is a file_stream */
+
+int from_file_stream(
+    STREAM *str)
+{
+    int             ok = (str->vtbl == &file_stream_vtbl);
+
+    return ok;
+}
+
 /* STACK functions */
 
 /* stack_init prepares a stack */
@@ -423,8 +438,8 @@ void stack_push(
     /*       At the moment, just say when we hit the limit */
 
     if (stack_depth == MAX_STACK_DEPTH) {
-        fprintf(stderr, "internal error: stack_depth = %d, source = '%.40s'\n",
-                        stack_depth, str->name);
+        report_fatal(stack->top, "INTERNAL ERROR: stack_depth = %d, source = '%.40s'\n",
+                                 stack_depth, str->name);
     /*  Chances are that we'll crash 'out-of-memory' pretty soon  */
     /*  At least we'll have a good idea why  */
     /*  exit(EXIT_FAILURE);  */
@@ -453,4 +468,68 @@ char           *stack_getline(
     }
 
     return line;
+}
+
+/* stream_here returns a dummy stream for use with report_xxx() */
+
+STREAM         *stream_here(
+    char *name,
+    int   line)
+{
+    static STREAM   here = { NULL, NULL, 0, NULL };
+
+    here.name = name;
+    here.line = line;
+    return &here;
+}
+
+
+/* inject_source injects a source line into the inject-buffer */
+void inject_source(
+    const char *fmt,
+    ...)
+{
+    va_list         ap;
+    char           *line = memcheck(malloc(MAX_FILE_LINE_LENGTH + 2));
+
+    if (inject_buf == NULL)
+        inject_buf = new_buffer();
+
+    va_start(ap, fmt);
+    vsprintf(line, fmt, ap);
+    va_end(ap);
+    strcat(line, "\n");
+
+    /* The only escape character we support is \t */
+    /* All others are passed through unchanged */
+    {
+        unsigned i;
+
+        for (i = 0; i < strlen(line); i++) {
+            if (line[i] == '\\') {
+                if (line[i+1] == 't') {
+                    strcpy(&line[i], &line[i+1]);
+                    line[i] = '\t';
+                }
+            }
+        }
+    }
+
+    buffer_append_line(inject_buf, line);
+    free(line);
+}
+
+
+/* stack_injected_source injects the inject-buffer onto the stack */
+void stack_injected_source(
+    STACK *stack,
+    char *name)
+{
+    STREAM      *str;
+
+    if (inject_buf) {
+        str = new_buffer_stream(inject_buf, name);
+        stack_push(stack, str);
+        inject_buf = NULL;
+    }
 }

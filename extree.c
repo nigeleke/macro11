@@ -329,7 +329,7 @@ EX_TREE        *evaluate_rec(
                 int             is_undefined = 0;
 
                 /* I'd prefer this behavior, but MACRO.SAV is a bit too primitive. */
-#if 0
+#if NODO
                 /* A temporary symbol defined later is "undefined." */
                 if (!(sym->flags & PERMANENT) && sym->stmtno > stmtno)
                     is_undefined = 1;
@@ -866,10 +866,6 @@ EX_TREE        *evaluate_rec(
                 if (shift > 0)
                     res = new_ex_bin(EX_MUL, left, new_ex_lit(1 << shift));
                 else {  /* (shift < 0) */
-//                  /* A right-shift of a negative number will not work correctly */
-//                  if (!RELAXED)
-//                      report_warn(NULL, "Result of shift by %d. may be incorrect\n", shift);
-// TODO: Remove     res = new_ex_bin(EX_DIV, left, new_ex_lit(1 << -shift));
                     res = new_ex_bin(EX_AND, left, new_ex_lit(~(0x7fff >> (-shift-1))));
                     res = new_ex_bin(EX_DIV, res,  new_ex_lit(1 << -shift));
                     res = new_ex_bin(EX_AND, res,  new_ex_lit(0x7fff >> (-shift-1)));
@@ -930,15 +926,6 @@ EX_TREE        *evaluate(
                 print_tree(stderr, res, 0);
 #endif /* DEBUG_REGEXPR */
                 /* TODO: maybe make this a EX_TEMP_SYM? */
-
-/* TODO: Once we're happy with this ... clean up and consolidate the 'else' part */
-
-#if 0    /* Original */
-                res = ex_err(res, res->cp);   /* Return an EX_LIT */
-#elif 0  /* Simple fix - but we can do better */
-                free_tree(res);
-                res = ex_err(NULL, res->cp);  /* Don't return an EX_LIT so we catch the error later */
-#else    /* This is the bit we want to keep - but join up with the 'else' */
                 {
                     EX_TREE        *newresult = new_ex_tree(EX_SYM);
 
@@ -947,7 +934,6 @@ EX_TREE        *evaluate(
                     free_tree(res);
                     res = newresult;
                 }
-#endif
             } else {
                 EX_TREE        *newresult = new_ex_tree(EX_SYM);
 

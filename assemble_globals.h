@@ -1,18 +1,20 @@
-
 #ifndef ASSEMBLE_GLOBALS__H
 #define ASSEMBLE_GLOBALS__H
 
 
+#include "extree.h"
 #include "mlb.h"
 #include "symbols.h"
-#include "extree.h"
 
 
-
-#define START_LOCSYM 30000             /* Start locally generated symbols at 30000$ */
-#define MAX_LOCSYM 65535               /* Strictly, local symbols are 1$ to 65535$ */
+#define MAX_FILE_LINE_LENGTH 132       /* DOC: 2.2 - Max length of an input source line from a file */
+#define START_LOCSYM 30000             /* DOC: J.1.6 - Start locally generated symbols at 30000$ */
+#define MAX_LOCSYM 65535               /* DOC: 3.5 - Strictly, local symbols are 1$ to 65535$ */
 #define BAD_LOCSYM 999999              /* No local symbol may ever be higher than this */
-#define MAX_MLBS 32                    /* Number of macro libraries */
+#define MAX_MLBS 32                    /* DOC: 6.10.1 - Number of macro libraries (RT-11 max <= 12) */
+                                       /* TODO: DOC: 6.10.2 - max nesting of .INCLUDE directives is five */
+                                       /* TODO: Add other limits which we have coded directly (!) */
+
 
 #define MAX_CONDS 256
 typedef struct cond {
@@ -38,11 +40,15 @@ extern int      last_locsym;    /* The last local symbol number generated */
 
 extern int      enabl_debug;    /* Whether assembler debugging is enabled */
 
-extern int      strictness;              /* How strict (relaxed) do we want to be? */
-                                         /* <0 = relaxed, 0 = normal, >0 = strict */
+extern int      support_m11;    /* Do we want to support m11 extensions? */
 
-#ifndef STRINGENTNESS 
-#define STRINGENTNESS 4                  /* Strictness level we consider to be STRINGENT (0-4) */
+extern int      abs_0_based;    /* TRUE if all ABSolute sections are zero based (else only '. ABS.') */
+
+extern int      strictness;     /* How strict (relaxed) do we want to be? */
+                                /* <0 = relaxed, 0 = normal, >0 = strict */
+
+#ifndef STRINGENTNESS
+#define STRINGENTNESS 4         /* Strictness level we consider to be STRINGENT (0-4) */
 #endif
 #define STRINGENT     (strictness >= STRINGENTNESS)  /* As STRICTEST but also follow the MACRO-11 documentation */
 
@@ -67,33 +73,13 @@ extern int      strictness;              /* How strict (relaxed) do we want to b
 #define RELAXED       (strictness <  0)  /* Relax the rules as much as we like */
 #define VERY_RELAXED  (strictness < -1)  /* Relax the rules so much that even .END isn't the end */
 
-// TODO: Remove ...
-//
-// extern int      opt_enabl_ama;  /* May be changed by command line */
-//
-// extern int      enabl_ama;      /* When set, chooses absolute (037) versus
-//                                    PC-relative */
-//                                 /* (067) addressing mode */
-// extern int      enabl_lsb;      /* When set, stops non-local symbol
-//                                    definitions from delimiting local
-//                                    symbol sections. */
-//
-// extern int      enabl_gbl;      /* Implicit definition of global symbols */
-//
-// extern int      enabl_lc;       /* If lowercase disabled, convert assembler
-//                                    source to upper case. */
-// extern int      enabl_lcm;      /* If lowercase disabled, .IF IDN/DIF are
-//                                    case-sensitive. */
-//
-// extern int      enabl_mcl;      /* If MCALL of unknown symbols is enabled. */
-
 extern int      suppressed;     /* Assembly suppressed by failed conditional */
 
 extern MLB     *mlbs[MAX_MLBS]; /* macro libraries specified on the command line */
 extern int      nr_mlbs;        /* Number of macro libraries */
 
-extern COND     conds[MAX_CONDS];       /* Stack of recent conditions */
-extern int      last_cond;      /* 0 means no stacked cond. */
+extern COND     conds[MAX_CONDS];  /* Stack of recent conditions */
+extern int      last_cond;         /* 0 means no stacked cond. */
 
 extern SECTION *sect_stack[SECT_STACK_SIZE]; /* 32 saved sections */
 extern int      dot_stack[SECT_STACK_SIZE];  /* 32 saved sections */
@@ -123,7 +109,6 @@ extern SECTION  blank_section;
 extern SECTION *sections[256];  /* Array of sections in the order they were defined */
 extern int      sector;         /* number of such sections */
 
-#endif
+#endif  /* ASSEMBLE_GLOBALS__C */
 
-
-#endif
+#endif  /* ASSEMBLE_GLOBALS__H */

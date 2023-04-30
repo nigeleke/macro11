@@ -1,23 +1,21 @@
-
 /*
- Smaller operators for assemble
-*/
+ * Smaller operators for assemble
+ */
 
-#include <stdlib.h>
-#include <ctype.h>
-#include <string.h>
 #include <assert.h>
+#include <ctype.h>
+#include <stdlib.h>
+#include <string.h>
 
-#include "util.h"
+#include "assemble_aux.h"  /* My own definitions */
 
-#include "assemble_aux.h"              /* my own definitions */
-
-#include "assemble_globals.h"
-#include "macros.h"
 #include "assemble.h"
+#include "assemble_globals.h"
 #include "listing.h"
-#include "symbols.h"
+#include "macros.h"
 #include "parse.h"
+#include "symbols.h"
+#include "util.h"
 
 
 /* Allocate a new section */
@@ -35,7 +33,6 @@ SECTION        *new_section(
     sect->label = NULL;
     return sect;
 }
-
 
 
 /* This is called by places that are about to store some code, or
@@ -64,6 +61,7 @@ void change_dot(
         current_pc->section->size = DOT + size;
 }
 
+
 /* store_word stores a word to the object file and lists it to the
    listing file */
 
@@ -80,6 +78,7 @@ int store_word(
     list_word(str, DOT, word, size, "");
     return text_word(tr, &DOT, size, word);
 }
+
 
 /* store_displaced_word stores a word to the object file and lists it to the
    listing file */
@@ -175,6 +174,7 @@ void free_addr_mode(
     mode->offset = NULL;
 }
 
+
 /* Get the register indicated by the expression */
 
 unsigned get_register(
@@ -212,13 +212,13 @@ void implicit_gbl(
         case EX_UNDEFINED_SYM:
             {
                 if (!(value->data.symbol->flags & SYMBOLFLAG_LOCAL) &&
-                    !isdigit(value->data.symbol->label[0])) {
+                    !isdigit((unsigned char) value->data.symbol->label[0])) {
                     /* Unless it's a local symbol, */
                     if (ENABL(GBL)) {
                         /* either make the undefined symbol into an
                            implicit global */
                         add_sym(value->data.symbol->label, 0, SYMBOLFLAG_GLOBAL,
-                                &absolute_section, &implicit_st, NULL);
+                                &absolute_section, &implicit_st, NULL);  /* TODO: Use abs_section_addr() ? */
                     } else {
                         /* or add it to the undefined symbol table,
                            purely for listing purposes.
@@ -227,10 +227,10 @@ void implicit_gbl(
 #define ADD_UNDEFINED_SYMBOLS_TO_MAIN_SYMBOL_TABLE      0
 #if ADD_UNDEFINED_SYMBOLS_TO_MAIN_SYMBOL_TABLE
                         add_sym(value->data.symbol->label, 0, SYMBOLFLAG_UNDEFINED,
-                                &absolute_section, &symbol_st, stack);
+                                &absolute_section, &symbol_st, stack);  /* TODO: Use abs_section_addr() ? */
 #else
                         add_sym(value->data.symbol->label, 0, SYMBOLFLAG_UNDEFINED,
-                                &absolute_section, &undefined_st, NULL);
+                                &absolute_section, &undefined_st, NULL);  /* TODO: Use abs_section_addr() ? */
 #endif
                     }
                 }
@@ -252,6 +252,7 @@ void implicit_gbl(
         break;
     }
 }
+
 
 /* Done between the first and second passes */
 /* Migrates the symbols from the "implicit" table into the main table. */
@@ -281,6 +282,7 @@ void migrate_implicit(
         sym->stmtno = isym->stmtno;
     }
 }
+
 
 /* Done between second pass and listing */
 /* Migrates the symbols from the "undefined" table into the main table. */
@@ -348,6 +350,7 @@ int express_sym_offset(
 
     return 0;
 }
+
 
 /*
   Translate an EX_TREE into a TEXT_COMPLEX suitable for encoding
@@ -445,6 +448,7 @@ int complex_tree(
     }
 }
 
+
 /* store a word which is represented by a complex expression. */
 
 static void store_complex(
@@ -469,6 +473,7 @@ static void store_complex(
         text_complex_commit(tr, &DOT, size, &tx, 0);
     }
 }
+
 
 /* store_complex_displaced is the same as store_complex but uses the
    "displaced" RLD code */
@@ -495,6 +500,7 @@ static void store_complex_displaced(
         text_complex_commit_displaced(tr, &DOT, size, &tx, 0);
     }
 }
+
 
 /*
   mode_extension - writes the extension word required by an addressing
@@ -570,6 +576,7 @@ void mode_extension(
     free_addr_mode(mode);
 }
 
+
 /* eval_defined - take an EX_TREE and returns TRUE if the tree
    represents "defined" symbols. */
 
@@ -592,6 +599,7 @@ int eval_defined(
     }
 }
 
+
 /* eval_undefined - take an EX_TREE and returns TRUE if it represents
    "undefined" symbols. */
 
@@ -612,6 +620,7 @@ int eval_undefined(
     }
 }
 
+
 /* push_cond - a new conditional (.IF) block has been activated.  Push
    its context. */
 
@@ -625,6 +634,7 @@ void push_cond(
     conds[last_cond].file = memcheck(strdup(str->name));
     conds[last_cond].line = str->line;
 }
+
 
 /*
   pop_cond - pop stacked conditionals. */
@@ -657,6 +667,7 @@ void go_section(
     current_pc->section = sect;
     DOT = sect->pc;
 }
+
 
 /*
   store_value - used to store a value represented by an expression
@@ -693,6 +704,7 @@ void store_value(
     }
 }
 
+
 /* do_word - used by .WORD, .BYTE, and implied .WORD. */
 
 int do_word(
@@ -704,7 +716,7 @@ int do_word(
     int comma;
 
     if (size == 2 && (DOT & 1)) {
-        report_warn(stack->top, ".WORD on odd boundary\n");
+        report_warn(stack->top, ".WORD on odd boundary [.EVEN implied]\n");
         store_word(stack->top, tr, 1, 0);       /* Align it */
     }
 
@@ -749,6 +761,7 @@ int do_word(
     return 1;
 }
 
+
 /*
   check_branch - check branch distance.
 */
@@ -780,6 +793,7 @@ int check_branch(
     }
     return 1;
 }
+
 
 /* write_psect_globals writes out the psect header and globals for each psect */
 /* if gsd == NULL we only test the globals are unique and update the psect info */
@@ -815,18 +829,15 @@ void write_psect_globals(
             unsigned      i = 0,
                           j = 0;
 
-            while (++j < nsyms - 1) {
+            while (++j < nsyms) {
                 if (symbols[i] && strncmp(symbols[i]->label, symbols[j]->label, 6) == 0) {
                     if (strncmp(symbols[i]->label, symbols[j]->label, 6) == 0) {
-#if 0  /* TODO: Fix when we have a true report_fatal() - or do what we need to get this into pass 1!!! */
                         report_fatal(NULL, "Global symbol %s (in %s) causes %s (in %s) to be ignored\n",
-                            symbols[i]->label, (symbols[i]->section->label[0] == '\0') ? ". BLK." : symbols[i]->section->label,
-                            symbols[j]->label, (symbols[j]->section->label[0] == '\0') ? ". BLK." : symbols[j]->section->label);
-#else
-                        fprintf(stderr, "Global symbol %s (in %s) causes %s (in %s) to be ignored\n",
-                                        symbols[i]->label, (symbols[i]->section->label[0] == '\0') ? ". BLK." : symbols[i]->section->label,
-                                        symbols[j]->label, (symbols[j]->section->label[0] == '\0') ? ". BLK." : symbols[j]->section->label);
-#endif
+                            symbols[i]->label,
+                                (symbols[i]->section->label[0] == '\0') ? ". BLK." : symbols[i]->section->label,
+                            symbols[j]->label,
+                                (symbols[j]->section->label[0] == '\0') ? ". BLK." : symbols[j]->section->label);
+
                         symbols[j] = NULL;
                    }
                } else {
@@ -867,6 +878,7 @@ void write_psect_globals(
     if (nsyms)
         free(symbols);
 }
+
 
 /* write_globals writes out the GSD prior to the second assembly pass */
 

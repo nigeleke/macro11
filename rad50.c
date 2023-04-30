@@ -34,18 +34,20 @@ DAMAGE.
 
 */
 
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
 #include <ctype.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "rad50.h"  /* My own definitions */
+
 
 static const char   rad50charset[]    = " ABCDEFGHIJKLMNOPQRSTUVWXYZ$. 0123456789";
 static const char   rad50charset_ul[] = " ABCDEFGHIJKLMNOPQRSTUVWXYZ$._0123456789";
 static const char  *rad50tbl          = rad50charset;
 
-/*rad50_enable_underscore enables '_' as a valid character in a RAD50 string */
+
+/* rad50_enable_underscore - enables '_' as a valid character in a RAD50 string */
 
 void rad50_enable_underscore(
     void)
@@ -53,7 +55,8 @@ void rad50_enable_underscore(
     rad50tbl = rad50charset_ul;
 }
 
-/* rad50 converts from 0 to 3 ASCII (or EBCDIC, if your compiler is so
+
+/* rad50 - converts from 0 to 3 ASCII (or EBCDIC, if your compiler is so
    inclined) characters into a RAD50 word. */
 
 unsigned rad50(
@@ -65,10 +68,11 @@ unsigned rad50(
 
     if (endp)
         *endp = cp;
-    if (!*cp)                          /* Got to check for end-of-string manually, because strchr will call it a hit.  :-/ */
+    if (!*cp)                      /* Got to check for end-of-string manually, because strchr will call it a hit. */
         return acc;
+
     rp = strchr(rad50tbl, toupper((unsigned char)*cp));
-    if (rp == NULL)                    /* Not a RAD50 character */
+    if (rp == NULL)                /* Not a RAD50 character */
         return acc;
     acc = ((int) (rp - rad50tbl)) * 03100;        /* Convert */
     cp++;
@@ -79,6 +83,7 @@ unsigned rad50(
         *endp = cp;
     if (!*cp)
         return acc;
+
     rp = strchr(rad50tbl, toupper((unsigned char)*cp));
     if (rp == NULL)
         return acc;
@@ -89,9 +94,11 @@ unsigned rad50(
         *endp = cp;
     if (!*cp)
         return acc;
+
     rp = strchr(rad50tbl, toupper((unsigned char)*cp));
     if (rp == NULL)
         return acc;
+
     acc += (int) (rp - rad50tbl);
     cp++;
 
@@ -99,6 +106,7 @@ unsigned rad50(
         *endp = cp;
     return acc;                        /* Done. */
 }
+
 
 /* rad50x2 - converts from 0 to 6 characters into two words of RAD50. */
 
@@ -111,6 +119,7 @@ void rad50x2(
     if (*cp)
         *rp = rad50(cp, &cp);
 }
+
 
 /* unrad50 - converts a RAD50 word to three characters of ASCII. */
 
@@ -126,6 +135,7 @@ void unrad50(
         cp[0] = cp[1] = cp[2] = '?';
 }
 
+
 /* ascii2rad50 - convert a single character to a RAD50 character */
 
 int ascii2rad50(
@@ -140,6 +150,7 @@ int ascii2rad50(
         return -1;
     return (int) (rp - rad50tbl);        /* Convert */
 }
+
 
 /* packrad50word - packs up to 3 characters into a RAD50 word.
  *

@@ -1,29 +1,28 @@
 #define MACROS__C
 
-
 /*
  * Dealing with MACROs
  */
 
+#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
-#include <ctype.h>
 
-#include "macros.h"                    /* my own definitions */
+#include "macros.h"                    /* My own definitions */
 
-#include "util.h"
-#include "assemble_globals.h"
 #include "assemble_aux.h"
+#include "assemble_globals.h"
 #include "listing.h"
 #include "parse.h"
+#include "rept_irpc.h"
 #include "stream2.h"
 #include "symbols.h"
+#include "util.h"
 
 
-/* Here's where I pretend I'm a C++ compiler.  :-/ */
+/* Here's where I pretend I'm a C++ compiler. */
 
 /* *** derive a MACRO_STREAM from a BUFFER_STREAM with a few other args */
-
 
 /* macro_stream_delete is called when a macro expansion is
  * exhausted.  The unique behavior is to unwind any stacked
@@ -38,9 +37,11 @@ void macro_stream_delete(
     buffer_stream_delete(str);
 }
 
+
 STREAM_VTBL     macro_stream_vtbl = {
     macro_stream_delete, buffer_stream_getline, buffer_stream_rewind
 };
+
 
 STREAM         *new_macro_stream(
     STREAM *refstr,
@@ -50,7 +51,7 @@ STREAM         *new_macro_stream(
 {
     MACRO_STREAM   *mstr = memcheck(malloc(sizeof(MACRO_STREAM)));
     {
-        char           *name = memcheck(malloc(strlen(refstr->name) + 32));
+        char           *name = memcheck(malloc(strlen(refstr->name) + SYMMAX_MAX + 10));
 
         sprintf(name, "%s:%d->%s", refstr->name, refstr->line, mac->sym.label);
         buffer_stream_construct(&mstr->bstr, buf, name);
@@ -63,8 +64,8 @@ STREAM         *new_macro_stream(
     return &mstr->bstr.stream;
 }
 
-/* read_body fetches the body of .MACRO, .REPT, .IRP, or .IRPC into a
-   BUFFER. */
+
+/* read_body fetches the body of .MACRO, .REPT, .IRP, or .IRPC into a BUFFER. */
 
 void read_body(
     STACK *stack,
@@ -73,14 +74,8 @@ void read_body(
     int called)
 {
     int             nest;
-    STREAM          top_here = { NULL, NULL, 0, NULL };
-    int             len = strlen(stack->top->name) + 1;
-
-    /* TODO: See P_REM in assemble.c -- use a new function in stream2.c for this */
-
-    top_here.name = memcheck(malloc(len));
-    memcpy(top_here.name, stack->top->name, len);
-    top_here.line = stack->top->line;
+    char           *mac_name = memcheck(strdup(stack->top->name));
+    int             mac_line = stack->top->line;
 
     /* Read the stream in until the end marker is hit */
 
@@ -94,22 +89,23 @@ void read_body(
         char           *cp;
 
         if (!(called & CALLED_NOLIST) &&
-                (list_level - 1 + LIST(MD)) > 0) {
+                (list_level + LIST(MD)) > 0) {
             list_flush();
         }
- 
+
         nextline = stack_getline(stack);  /* Now read the line */
         if (nextline == NULL) {        /* End of file. */
-            /* TODO: Need a function to handle errors which also show on pass 1 */
-            if (!pass && list_pass_0 < 2)
-                fprintf(stderr, "%s:%d: Macro body of '%s' not closed\n",
-                                top_here.name, top_here.line, name);
-            report_fatal(&top_here, "Macro body of '%s' not closed\n", name);
-            break;  /* This ought to be fatal */
+            report_fatal(stream_here(mac_name, mac_line), "Body of '%s' (here) has missing .ENDM\n", name);
+#if TODO
+            free(mac_name);
+            return;
+#else
+            exit(EXIT_FAILURE);  /* TODO: remove this when .IRP/.IRPC/.REPT are not "fatal" */
+#endif
         }
 
         if (!(called & CALLED_NOLIST) &&
-                (list_level - 1 + LIST(MD)) > 0) {
+                (list_level + LIST(MD)) > 0) {
             list_source(stack->top, nextline);
         }
 
@@ -128,7 +124,7 @@ void read_body(
             if (op->value == P_END) {
                 if (STRICT) {
                     report_warn(stack->top, ".END seen in body of %s\n", name);
-                 /* TODO: Would be nice to 'errcnt++' or similar */
+                /*  TODO: Would be nice to 'errcnt++' or similar  */
                 }
             }
 
@@ -165,19 +161,21 @@ void read_body(
             }
 
             if (nest == 0) {
-                free(top_here.name);
+                free(mac_name);
                 return;                /* All done. */
             }
         }
         buffer_append_line(gb, nextline);
     }
-    free(top_here.name);
+    /* NOT REACHED */
 }
+
 
 /* Diagnostic: dumpmacro dumps a macro definition to stdout.
    I used this for debugging; it's not called at all right now, but
    I hate to delete good code. */
 
+#if DEBUG_MACROS
 void dumpmacro(
     MACRO *mac,
     FILE *fp)
@@ -200,6 +198,8 @@ void dumpmacro(
 
     fputs(".ENDM\n", fp);
 }
+#endif
+
 
 /* defmacro - define a macro. */
 /* Also used by .MCALL to pull macro definitions from macro libraries */
@@ -256,13 +256,26 @@ MACRO          *defmacro(
              * but which MACRO.SAV assembles.  Sigh.  */
             if (STRICT) {
                 report_warn(stack->top, "Invalid .MACRO argument\n");
-#if 0
+#if NODO
                 remove_sym(&mac->sym, &macro_st);
                 free_macro(mac);
                 return NULL;
 #endif
             }
             break;  /* So, just quit defining arguments. */
+        }
+
+        /* DOC: 7.1.1 - check for duplicate dummy argument names */
+        {
+            ARG *argp = mac->args;
+
+            while (argp != NULL) {
+                if (strcmp(arg->label, argp->label) == 0) {
+                    report_err(stack->top, "Duplicate .MACRO argument '%s'\n", arg->label);
+                    return NULL;
+                }
+                argp = argp->next;
+            }
         }
 
         cp = skipwhite(cp);
@@ -309,7 +322,6 @@ MACRO          *defmacro(
 
     return mac;
 }
-
 
 
 /* Allocate a new ARG */
@@ -363,6 +375,7 @@ static ARG     *find_arg(
 
     return NULL;
 }
+
 
 /* subst_args - given a BUFFER and a list of args, generate a new
    BUFFER with argument replacement having taken place. */
@@ -419,6 +432,7 @@ BUFFER         *subst_args(
     return gb;                         /* Done. */
 }
 
+
 /* eval_str - the language allows an argument expression to be given
    as "\expression" which means, evaluate the expression and
    substitute the numeric value in the current radix. */
@@ -444,6 +458,7 @@ char *eval_str(
     arg = memcheck(strdup(temp));
     return arg;
 }
+
 
 /* getstring_macarg - parse a string that possibly starts with a backslash.
  * If so, performs expression evaluation.
@@ -490,6 +505,7 @@ char           *getstring_macarg(
         return getstring(cp, endp);
     }
 }
+
 
 /* expandmacro - return a STREAM containing the expansion of a macro */
 
@@ -578,7 +594,7 @@ STREAM         *expandmacro(
         int             locsym;
 
         if (last_macro_lsb != lsb)
-            locsym = last_locsym = START_LOCSYM;
+            locsym = last_locsym /* = START_LOCSYM */;  /* MACRO-11 uses a continuous range of '?' local symbols */
         else
             locsym = last_locsym;
         last_macro_lsb = lsb;
@@ -627,6 +643,7 @@ STREAM         *expandmacro(
 /* dump_all_macros is a diagnostic function that's currently not
    used.  I used it while debugging, and I haven't removed it. */
 
+#if DEBUG_MACROS
 void dump_all_macros(
     void)
 {
@@ -639,6 +656,7 @@ void dump_all_macros(
         fprintf(lstfile, "\n\n");
     }
 }
+#endif
 
 
 /* Allocate a new macro */
@@ -686,7 +704,10 @@ char *my_stpncpy(char *dest, const char *src, size_t n)
 }
 #endif
 
-int do_mcall (char *label, STACK *stack)
+
+int do_mcall(
+    char *label,
+    STACK *stack)
 {
     SYMBOL         *op;         /* The operation SYMBOL */
     STREAM         *macstr;
@@ -761,4 +782,18 @@ int do_mcall (char *label, STACK *stack)
         return 1;
     }
     return 0;
+}
+
+
+/* within_macro_expansion - returns TRUE if 'str' is directly within a macro expansion (including .REPT, .IRP, .IRPC) */
+
+int within_macro_expansion(
+    STREAM *str)
+{
+    int             ok = ((str->vtbl == &macro_stream_vtbl) ||
+                          (str->vtbl ==  &rept_stream_vtbl) ||
+                          (str->vtbl ==   &irp_stream_vtbl) ||
+                          (str->vtbl ==  &irpc_stream_vtbl));
+
+    return ok;
 }

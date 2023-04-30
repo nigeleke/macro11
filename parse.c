@@ -1,16 +1,22 @@
-#include <stdlib.h>
-#include <stdint.h>
-#include <string.h>
-#include <math.h>
-#include <float.h>
+/*
+ * Generic parsing routines.
+ */
+
 #include <ctype.h>
+#include <float.h>
+#include <math.h>
+#include <stdint.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "parse.h"                     /* my own definitions */
 
-#include "util.h"
-#include "rad50.h"
-#include "listing.h"
 #include "assemble_globals.h"
+#include "listing.h"
+#include "rad50.h"
+#include "util.h"
+
+#define DEBUG_LSB       0  /* See also assemble.c */
 
 
 /* skipwhite - used everywhere to advance a char pointer past spaces */
@@ -23,6 +29,7 @@ char           *skipwhite(
     return cp;
 }
 
+
 /* skipdelim - used everywhere to advance between tokens.  Whitespace
    and one comma are allowed delims. */
 
@@ -34,6 +41,7 @@ char           *skipdelim(
         cp = skipwhite(cp + 1);
     return cp;
 }
+
 
 /* skipdelim_comma - used to advance between tokens.  Whitespace
    and one comma are allowed delims.
@@ -50,6 +58,7 @@ char           *skipdelim_comma(
     }
     return cp;
 }
+
 
 /*
  * check_eol - check that we're at the end of a line.
@@ -70,6 +79,7 @@ int check_eol(
 
     return 0;
 }
+
 
 /* Parses a string from the input stream. */
 /* If not bracketed by <...> or ^/.../, then */
@@ -97,6 +107,7 @@ char           *getstring(
 
     return str;
 }
+
 
 /* Parses a string from the input stream for .include and .library.
  * These have a special kind of delimiters. It likes
@@ -147,6 +158,7 @@ char           *getstring_fn(
     return str;
 }
 
+
 /* Get what would be the operation code from the line.  */
 /* Used to find the ends of streams without evaluating them, like
    finding the closing .ENDM on a macro definition */
@@ -159,23 +171,25 @@ SYMBOL         *get_op(
     char           *label;
     SYMBOL         *op;
 
-    cp = skipwhite(cp);
-    if (EOL(*cp))
-        return NULL;
+    for (;;) {
+        cp = skipwhite(cp);
+        if (EOL(*cp))
+            return NULL;
 
-    label = get_symbol(cp, &cp, &local);
-    if (label == NULL)
-        return NULL;                   /* No operation code. */
+        label = get_symbol(cp, &cp, &local);
+        if (label == NULL)
+            return NULL;                   /* No operation code. */
 
-    cp = skipwhite(cp);
-    if (*cp == ':') {                  /* A label definition? */
-        cp++;
+        cp = skipwhite(cp);
+        if (*cp != ':')
+            break;
+
+        /* It is a label definition - so skip it */
+
+        cp = skipwhite(cp + 1);        /* We could be STRINGENT here */
         if (*cp == ':')
             cp++;                      /* Skip it */
         free(label);
-        label = get_symbol(cp, &cp, NULL);
-        if (label == NULL)
-            return NULL;
     }
 
     op = lookup_sym(label, &system_st);
@@ -186,7 +200,6 @@ SYMBOL         *get_op(
 
     return op;
 }
-
 
 
 /* get_mode - parse a general addressing mode. */
@@ -202,8 +215,6 @@ int get_mode(
     mode->offset = NULL;
     mode->pcrel = 0;
     mode->type = MODE_REG;
-
-    /* TODO: Clean up all #if 0 ... #endif once we're happy with the changes */
 
     cp = skipwhite(cp);
 
@@ -221,16 +232,16 @@ int get_mode(
         mode->offset = parse_expr(cp, 0);
         if (endp)
             *endp = mode->offset->cp;
-        { /**/
-        int ok = expr_ok(mode->offset);
+        {
+            int ok = expr_ok(mode->offset);
 
-        if (!ok) {
-            *error = "Invalid expression after '#'";
-            free_tree(mode->offset);
-            mode->offset = NULL;
+            if (!ok) {
+                *error = "Invalid expression after '#'";
+                free_tree(mode->offset);
+                mode->offset = NULL;
+            }
+            return ok;
         }
-        return ok;
-        } /**/
     }
 
     /* Check for -(Rn) */
@@ -246,10 +257,6 @@ int get_mode(
             reg = get_register(value);
             if (reg == NO_REG) {
                 *error = "Register expected after '-('";
-#if 0
-                free_tree(value);
-                return FALSE;
-#endif
             }
             if (tcp = skipwhite(value->cp), *tcp++ != ')') {
                 *error = "')' expected after register";
@@ -274,10 +281,6 @@ int get_mode(
 
         if (reg == NO_REG) {
             *error = "Register expected after '('";
-#if 0
-            free_tree(value);
-            return FALSE;
-#endif
         }
         if (tcp = skipwhite(value->cp), *tcp++ != ')') {
             *error = "')' expected after register";
@@ -334,12 +337,6 @@ int get_mode(
         reg = get_register(value);
         if (reg == NO_REG) {
             *error = "Register expected after 'offset('";
-#if 0
-            free_tree(value);
-            free_tree(mode->offset);
-            mode->offset = NULL;
-            return FALSE;              /* Syntax error in addressing mode */
-#endif
         }
         if (cp = skipwhite(value->cp), *cp++ != ')') {
             *error = "')' expected after 'offset(register'";
@@ -373,9 +370,6 @@ int get_mode(
             mode->type |= sym->value;
             if (sym->value == REG_ERR_VALUE) {
                 *error = "Invalid register";
-#if 0
-                return FALSE;
-#endif
             }
             return TRUE;
         }
@@ -398,6 +392,7 @@ int get_mode(
 
     return TRUE;
 }
+
 
 /* get_fp_src_mode - parse an immediate fp literal or a general mode */
 
@@ -429,17 +424,15 @@ int get_fp_src_mode(
         }
     }
 
-    { /**/
-    int ret = get_mode(savecp, endp, mode, error);
-
-    return ret;
-    } /**/
+    return get_mode(savecp, endp, mode, error);
 }
 
 #define DEBUG_FLOAT     0
 
-void
-printflt(unsigned *flt, int size)
+#if DEBUG_FLOAT
+void printflt(
+    unsigned *flt,
+    int size)
 {
     int i;
 
@@ -454,6 +447,7 @@ printflt(unsigned *flt, int size)
 
     printf("\n");
 }
+#endif
 
 #if DEBUG_FLOAT
 #define DF(...)   printf(__VA_ARGS__)
@@ -732,12 +726,12 @@ int parse_float(
 
     if (toupper((unsigned char)*cp) == 'E') {
         cp++;
-        { /**/
-        int exp = strtol(cp, &cp, 10);
+        {
+            int exp = strtol(cp, &cp, 10);
 
-        float_dec_exponent += exp;
-        DF("E%d -> dec_exp %d\n", exp, float_dec_exponent);
-        } /**/
+            float_dec_exponent += exp;
+            DF("E%d -> dec_exp %d\n", exp, float_dec_exponent);
+        }
     }
 
     if (endp)
@@ -783,63 +777,63 @@ int parse_float(
             float_buf >>= 1;
 
 #if PARSE_FLOAT_DIVIDE_BY_MULT_LOOP
-            { /**/
-            uint64_t float_save = float_buf;
-            DUMP3;
-            DF("float_save: %016llx\n", float_save);
+            {
+                uint64_t float_save = float_buf;
+                DUMP3;
+                DF("float_save: %016llx\n", float_save);
 
-            /*
-             * Divide by 5: this is done by the trick of "dividing by
-             * multiplying". In order to keep as many significant bits as
-             * possible, we multiply by 8/5, and adjust the binary exponent to
-             * compensate for the factor of 8.
-             * The result is found when we drop the 64 low bits.
-             *
-             * So we multiply with the 65-bit number
-             *                     0x19999999999999999
-             *                     1 1001 1001 1001 ...
-             * which is 8 *          0011 0011 0011 ... aka 0x333...
-             * which is (2**64 - 1) / 5 aka 0xFFF... / 5.
-             *
-             * The rightmost (1 * float_save << 0) is contributed to the total
-             * because float_buf already contains that value.
-             * In loop i=32, (float_save << 3) is added:
-             *               due to the two extra conditional shifts.
-             * In loop i=31, (float_save << 4) is added.
-             * In loop i=30, (float_save << 7) is added.
-             * etc, etc,
-             * so forming the repeating bit-pattern 1100 of the multiplier.
-             *
-             * Instead of shifting float_save left, we shift float_buf right,
-             * which over time drops precisely the desired 64 low bits.
-             *
-             * This is nearly exact but exact enough.
-             *
-             * The final result = start * 8 / 5.
-             */
-            for (int i = 16 * 2; i > 0; i--) {
-                if ((i & 1) == 0) {             /* 42$ */
-                    float_buf >>= 2;
+                /*
+                 * Divide by 5: this is done by the trick of "dividing by
+                 * multiplying". In order to keep as many significant bits as
+                 * possible, we multiply by 8/5, and adjust the binary exponent to
+                 * compensate for the factor of 8.
+                 * The result is found when we drop the 64 low bits.
+                 *
+                 * So we multiply with the 65-bit number
+                 *                     0x19999999999999999
+                 *                     1 1001 1001 1001 ...
+                 * which is 8 *          0011 0011 0011 ... aka 0x333...
+                 * which is (2**64 - 1) / 5 aka 0xFFF... / 5.
+                 *
+                 * The rightmost (1 * float_save << 0) is contributed to the total
+                 * because float_buf already contains that value.
+                 * In loop i=32, (float_save << 3) is added:
+                 *               due to the two extra conditional shifts.
+                 * In loop i=31, (float_save << 4) is added.
+                 * In loop i=30, (float_save << 7) is added.
+                 * etc, etc,
+                 * so forming the repeating bit-pattern 1100 of the multiplier.
+                 *
+                 * Instead of shifting float_save left, we shift float_buf right,
+                 * which over time drops precisely the desired 64 low bits.
+                 *
+                 * This is nearly exact but exact enough.
+                 *
+                 * The final result = start * 8 / 5.
+                 */
+                for (int i = 16 * 2; i > 0; i--) {
+                    if ((i & 1) == 0) {             /* 42$ */
+                        float_buf >>= 2;
+                    }
+                    float_buf >>= 1;                /* 43$ */
+                    float_buf += float_save;
+                    DF("Loop i=%2d: ", i); DUMP3;
                 }
-                float_buf >>= 1;                /* 43$ */
-                float_buf += float_save;
-                DF("Loop i=%2d: ", i); DUMP3;
             }
-            } /**/
 #else
-            { /**/
-            int round = float_buf % 5;
-            float_buf = float_buf / 5 * 8;
+            {
+                int round = float_buf % 5;
+                float_buf = float_buf / 5 * 8;
 
-            /*
-             * Try to fill in some of the lesser significant bits.
-             * This is not always bitwise identical to the original method
-             * but probably more accurate.
-             */
-            if (round) {
-                float_buf += round * 8 / 5;
+                /*
+                 * Try to fill in some of the lesser significant bits.
+                 * This is not always bitwise identical to the original method
+                 * but probably more accurate.
+                 */
+                if (round) {
+                    float_buf += round * 8 / 5;
+                }
             }
-            } /**/
 #endif
 
             /* It's not simply dividing by 5, it also multiplies by 8,
@@ -851,17 +845,17 @@ int parse_float(
 
         /* Normalize the mantissa: shift a single 1 out to the left */
         DF("Normalize the mantissa: shift a single 1 out to the left\n");
-        { /**/
-        int carry;
+        {
+            int carry;
 
-        do {
-            /* FLTG5 */
-            float_bin_exponent--;
-            carry = (float_buf >> 63) & 1;
-            float_buf <<= 1;
-            DUMP3;
-        } while (carry == 0);
-        } /**/
+            do {
+                /* FLTG5 */
+                float_bin_exponent--;
+                carry = (float_buf >> 63) & 1;
+                float_buf <<= 1;
+                DUMP3;
+            } while (carry == 0);
+        }
 
         /* Set excess 128. */
         DF("Set excess 128.\n");
@@ -876,69 +870,69 @@ int parse_float(
 
         /* Shift right 9 positions to make room for sign and exponent 3$ */
         DF("Shift right 9 positions to make room for sign and exponent\n");
-        { /**/
-        int round = (float_buf >> 8) & 0x0001;
+        {
+            int round = (float_buf >> 8) & 0x0001;
 
-        float_buf >>= 9;
-        float_buf |= (uint64_t)float_bin_exponent << (64-9);
-        DUMP3;
+            float_buf >>= 9;
+            float_buf |= (uint64_t)float_bin_exponent << (64-9);
+            DUMP3;
 
-        /*
-         * This rounding step seems always needed to make the result the same
-         * as the implementation with long doubles.
-         *
-         * This may be because of the slight imprecision of the divisions by 10?
-         *
-         * It is needed to get some exact results for values that are indeed
-         * exactly representable. Examples:
-         *
-         * (2**9-3)/2**9 = 0.994140625 = 0,11111101
-         *                 407e 7fff ffff ffff -> 407e 8000 0000 0000 (correct)
-         * 1.00 (or 100E-2) divides 100 by 100 and gets
-         *                 407f ffff ffff ffff -> 4080 0000 0000 0000 (correct)
-         *
-         * The reference implementation omits this rounding for size != 4:
-         * it has only one rounding step, which always depends on the size.
-         */
-        float_buf += round;
-        DF("round: size = 4, round = %d\n", round);
+            /*
+             * This rounding step seems always needed to make the result the same
+             * as the implementation with long doubles.
+             *
+             * This may be because of the slight imprecision of the divisions by 10?
+             *
+             * It is needed to get some exact results for values that are indeed
+             * exactly representable. Examples:
+             *
+             * (2**9-3)/2**9 = 0.994140625 = 0,11111101
+             *                 407e 7fff ffff ffff -> 407e 8000 0000 0000 (correct)
+             * 1.00 (or 100E-2) divides 100 by 100 and gets
+             *                 407f ffff ffff ffff -> 4080 0000 0000 0000 (correct)
+             *
+             * The reference implementation omits this rounding for size != 4:
+             * it has only one rounding step, which always depends on the size.
+             */
+            float_buf += round;
+            DF("round: size = 4, round = %d\n", round);
 
-        /* If .DSABL FPT (default), round the floating-point value */
-        if (!ENABL(FPT)) {
-            uint64_t onehalf;
+            /* If .DSABL FPT (default), round the floating-point value */
+            if (!ENABL(FPT)) {
+                uint64_t onehalf;
 
-            if (size < 4) {
-                /* 1 << 31 or 1 << 47 */
-                onehalf = 1ULL << ((16 * (4-size)) - 1);
-                DF("round: size = %d, onehalf = %016llx\n", size, onehalf);
-                float_buf += onehalf;
+                if (size < 4) {
+                    /* 1 << 31 or 1 << 47 */
+                    onehalf = 1ULL << ((16 * (4-size)) - 1);
+                    DF("round: size = %d, onehalf = %016llx\n", size, onehalf);
+                    float_buf += onehalf;
+                    DUMP3;
+
+                    /* The rounding bit is the lesser significant bit that's just
+                     * outside the returned result. If we round, we add it to the
+                     * returned value.
+                     *
+                     * If there is a carry-out of the mantissa, it gets added to
+                     * the exponent (increasing it by 1).
+                     *
+                     * If that also overflows, we truely have overflow.
+                     */
+                }
+
+                DF("After rounding\n");
                 DUMP3;
-
-                /* The rounding bit is the lesser significant bit that's just
-                 * outside the returned result. If we round, we add it to the
-                 * returned value.
-                 *
-                 * If there is a carry-out of the mantissa, it gets added to
-                 * the exponent (increasing it by 1).
-                 *
-                 * If that also overflows, we truely have overflow.
-                 */
             }
 
-            DF("After rounding\n");
-            DUMP3;
-        }
+            if (float_buf & 0x8000000000000000ULL) {
+                // 6$ error T: exponent overflow
+                report_err(NULL, "error T: exponent overflow\n");
+                return 0;
+            }
 
-        if (float_buf & 0x8000000000000000ULL) {
-            // 6$ error T: exponent overflow
-            report_err(NULL, "error T: exponent overflow\n");
-            return 0;
+            /* 7$ */
+            float_buf |= (uint64_t)float_sign << 63;
+            DF("Put in float_sign: "); DUMP3;
         }
-
-        /* 7$ */
-        float_buf |= (uint64_t)float_sign << 63;
-        DF("Put in float_sign: "); DUMP3;
-        } /**/
     }
 
     /* Now put together the result from the parts */
@@ -1068,6 +1062,7 @@ EX_TREE        *parse_binary(
     return leftp;
 }
 
+
 /* get_symbol is used all over the place to pull a symbol out of the
    text.  */
 
@@ -1136,10 +1131,12 @@ char           *get_symbol(
                 }
 
                 sprintf(newsym, "%ld$%d", symnum, lsb);
+#if DEBUG_LSB
                 if (enabl_debug > 1 && lstfile) {
                     fprintf(lstfile, "lsb %d: %s -> %s\n",
                             lsb, symcp, newsym);
                 }
+#endif
                 free(symcp);
                 symcp = newsym;
                 *islocal = SYMBOLFLAG_LOCAL;
@@ -1159,6 +1156,7 @@ char           *get_symbol(
 
     return symcp;
 }
+
 
 /*
   brackrange is used to find a range of text which may or may not be
@@ -1229,6 +1227,7 @@ int brackrange(
 
     return 1;
 }
+
 
 /* parse_unary parses out a unary operator or leaf expression.  */
 
@@ -1523,7 +1522,7 @@ EX_TREE        *parse_unary(
         sym->flags = SYMBOLFLAG_UNDEFINED | local;
         sym->stmtno = stmtno;
         sym->next = NULL;
-        sym->section = &absolute_section;
+        sym->section = &absolute_section;  /* TODO: Decide if we want to use abs_section_addr() */
         sym->value = 0;
 
         tp = new_ex_tree(EX_UNDEFINED_SYM);
@@ -1533,6 +1532,7 @@ EX_TREE        *parse_unary(
         return tp;
     }
 }
+
 
 /*
   parse_expr - this gets called everywhere.  It parses and evaluates
@@ -1555,6 +1555,7 @@ EX_TREE        *parse_expr(
 
     return value;
 }
+
 
 /*
   parse_unary_expr It parses and evaluates
@@ -1579,6 +1580,7 @@ EX_TREE        *parse_unary_expr(
     return value;
 }
 
+
 /*
  * expr_ok  Returns TRUE if there was a valid expression parsed.
  */
@@ -1586,5 +1588,5 @@ EX_TREE        *parse_unary_expr(
 int             expr_ok(
     EX_TREE *expr)
 {
-    return expr != NULL && expr->type != EX_ERR;
+    return (expr != NULL && expr->type != EX_ERR);
 }

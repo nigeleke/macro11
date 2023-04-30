@@ -1,21 +1,26 @@
-
 #define SYMBOLS__C
 
+/*
+ * Symbol-related code.
+ */
+
+#include <ctype.h>
 #include <stdlib.h>
 #include <string.h>
-#include <ctype.h>
 
-#include "symbols.h"                   /* my own definitions */
+#include "symbols.h"                   /* My own definitions */
 
-#include "util.h"
 #include "assemble_globals.h"
 #include "listing.h"
 #include "object.h"
+#include "util.h"
+
 
 /* GLOBALS */
 int             symbol_len = SYMMAX_DEFAULT;    /* max. len of symbols. default = 6 */
 int             symbol_allow_underscores = 0;   /* allow "_" in symbol names */
 int             symbol_list_locals = 0;         /* list local symbols in the symbol table */
+int             looked_up_local_sym;            /* TRUE if the current source line looked up a local symbol */
 
 DIRARG          enabl_list_arg[ARGS__LAST];     /* .ENABL/.DSABL and .LIST/.NLIST arguments */
 
@@ -35,12 +40,14 @@ SYMBOL_TABLE    implicit_st;    /* The symbols which may be implicit globals */
 SYMBOL_TABLE    undefined_st;   /* The symbols which may be undefined */
 
 
+
 void list_section(SECTION *sec);
+
 
 void dump_sym(
     SYMBOL *sym)
 {
-    /* TODO: Replace report_warn() with something like report_info() */
+    /* TODO: Replace THIS report_warn() with something like report_info() */
     report_warn(NULL, "'%s': %06o, stmt %d, flags %o:%s%s%s%s%s%s%s\n",
                 sym->label,
                 sym->value,
@@ -55,6 +62,7 @@ void dump_sym(
                 ((sym->flags & SYMBOLFLAG_IMPLICIT_GLOBAL)? " IMPLICIT_GLOBAL" : ""));
 }
 
+
 void check_sym_invariants(
     SYMBOL *sym,
     char *file,
@@ -63,12 +71,10 @@ void check_sym_invariants(
 {
     int dump = 0;
 
-    /* TODO: Replace report_err() throughout with report_fatal() ? */
-
     if (sym->section == &instruction_section) {
         /* The instructions use the flags field differently */
         if ((sym->flags & ~OC_MASK) != 0) {
-            report_err(stream, "%s %d: Instruction symbol %s has wrong flags\n", file, line, sym->label);
+            report_fatal(stream, "%s %d: Instruction symbol %s has wrong flags\n", file, line, sym->label);
             dump_sym(sym);
         }
         return;
@@ -100,38 +106,38 @@ void check_sym_invariants(
         case SYMBOLFLAG_UNDEFINED:
             break;
         default:
-            report_err(stream, "%s %d: Symbol '%s' in section '%s' definedness is inconsistent\n",
-                       file, line, sym->label, sym->section->label);
+            report_fatal(stream, "%s %d: Symbol '%s' in section '%s' definedness is inconsistent\n",
+                         file, line, sym->label, sym->section->label);
             dump++;
     }
 
     if ( (sym->flags & SYMBOLFLAG_IMPLICIT_GLOBAL) &&
         !(sym->flags & SYMBOLFLAG_GLOBAL)) {
-        report_err(stream, "%s %d: Symbol '%s' globalness is inconsistent\n", file, line, sym->label);
+        report_fatal(stream, "%s %d: Symbol '%s' globalness is inconsistent\n", file, line, sym->label);
         dump++;
     }
 
     if ( (sym->flags & SYMBOLFLAG_LOCAL) &&
          (sym->flags & SYMBOLFLAG_GLOBAL)) {
-        report_err(stream, "%s %d: Symbol '%s' is local and global\n", file, line, sym->label);
+        report_fatal(stream, "%s %d: Symbol '%s' is local and global\n", file, line, sym->label);
         dump++;
     }
 
     if ( (sym->flags & SYMBOLFLAG_PERMANENT) &&
         !(sym->flags & SYMBOLFLAG_DEFINITION)) {
-        report_err(stream, "%s %d: Symbol '%s' is permanent without definition\n", file, line, sym->label);
+        report_fatal(stream, "%s %d: Symbol '%s' is permanent without definition\n", file, line, sym->label);
         dump++;
     }
 
     if ( (sym->flags & SYMBOLFLAG_WEAK) &&
         !(sym->flags & SYMBOLFLAG_GLOBAL)) {
-        report_err(stream, "%s %d: Symbol '%s' weak/global is inconsistent\n", file, line, sym->label);
+        report_fatal(stream, "%s %d: Symbol '%s' weak/global is inconsistent\n", file, line, sym->label);
         dump++;
     }
 
     if (sym->value > 0xffff) {
-            report_err(stream, "%s %d: Symbol '%s' [%o] takes more than 16-bits\n",
-                       file, line, sym->label, sym->value);
+            report_fatal(stream, "%s %d: Symbol '%s' [%o] takes more than 16-bits\n",
+                         file, line, sym->label, sym->value);
             dump++;
     }
 
@@ -156,7 +162,6 @@ int hash_name(
 }
 
 
-
 /* Diagnostic: symflags returns a char* which gives flags I can use to
    show the context of a symbol. */
 
@@ -166,18 +171,24 @@ char           *symflags(
     static char     temp[8];
     char           *fp = temp;
 
-    /* TODO: Update with the rest of the SYMBOLFLAGs */
-
-    if (sym->flags & SYMBOLFLAG_GLOBAL)
-        *fp++ = 'G';
     if (sym->flags & SYMBOLFLAG_PERMANENT)
         *fp++ = 'P';
+    if (sym->flags & SYMBOLFLAG_GLOBAL)
+        *fp++ = 'G';
+    if (sym->flags & SYMBOLFLAG_WEAK)
+        *fp++ = 'W';
     if (sym->flags & SYMBOLFLAG_DEFINITION)
         *fp++ = 'D';
-    *fp = 0;
-    return fp;
-}
+    if (sym->flags & SYMBOLFLAG_UNDEFINED)
+        *fp++ = 'U';
+    if (sym->flags & SYMBOLFLAG_LOCAL)
+        *fp++ = 'L';
+    if (sym->flags & SYMBOLFLAG_IMPLICIT_GLOBAL)
+        *fp++ = 'I';
 
+    *fp = '\0';
+    return temp;
+}
 
 
 /* Allocate a new symbol.  Does not add it to any symbol table. */
@@ -244,6 +255,8 @@ SYMBOL         *lookup_sym(
 
     if (sym) {
         check_sym_invariants(sym, __FILE__, __LINE__, NULL);
+        if (sym->flags & SYMBOLFLAG_LOCAL)
+            looked_up_local_sym = TRUE;
     }
     return sym;
 }
@@ -352,7 +365,7 @@ SYMBOL         *add_sym(
         if (sym->flags & SYMBOLFLAG_PERMANENT) {
             if (flags & SYMBOLFLAG_PERMANENT) {
                 if (sym->value != value || sym->section != section) {
-                    report_err(stream, "Phase error: '%s'\n", label);
+                    report_fatal(stream, "Phase error: '%s'\n", label);
                     return NULL;
                 }
             } else {
@@ -365,7 +378,7 @@ SYMBOL         *add_sym(
             sym->flags &= ~(SYMBOLFLAG_PERMANENT | SYMBOLFLAG_UNDEFINED);
         }
         else if (!(sym->flags & SYMBOLFLAG_UNDEFINED) && (flags & SYMBOLFLAG_UNDEFINED)) {
-            report_err(stream, "INTERNAL ERROR: Turning defined symbol '%s' into undefined\n", label);
+            report_fatal(stream, "INTERNAL ERROR: Turning defined symbol '%s' into undefined\n", label);
             return sym;
         }
         /* Check for compatible definition */
@@ -384,7 +397,7 @@ SYMBOL         *add_sym(
             return sym;
         }
 
-        report_err(stream, "INTERNAL ERROR: Bad symbol '%s' redefinition\n", label);
+        report_fatal(stream, "INTERNAL ERROR: Bad symbol '%s' redefinition\n", label);
         return NULL;                   /* Bad symbol redefinition */
     }
 
@@ -431,8 +444,10 @@ void add_dirargs(
 
     ADD_ENABL_ARG(ABS, ARGS_DSABL, ARGS_NOT_IMPLEMENTED);  /* Output in .LDA format */
     ADD_ENABL_ARG(AMA, ARGS_DSABL, ARGS_NO_FLAGS       );  /* Convert mode 67 (@ADDR) to 37 (@#ADDR) */
-    ADD_ENABL_ARG(CDR, ARGS_DSABL, ARGS_NOT_SUPPORTED  );  /* Card-reader format (ignore columns 73 onwards) */
+    ADD_ENABL_ARG(BMK, ARGS_DSABL, ARGS_HIDDEN         );  /* MACRO regression benchmark [undocumented] */
+    ADD_ENABL_ARG(CDR, ARGS_DSABL, ARGS_NO_FLAGS       );  /* Card-reader format (ignore columns 73 onwards) */
     ADD_ENABL_ARG(CRF, ARGS_ENABL, ARGS_NO_FUNCTION    );  /* Cross-reference output */
+    ADD_ENABL_ARG(DBG, ARGS_DSABL, ARGS_NOT_IMPLEMENTED);  /* ISD Record support (DEBUG-16 & MpPASCAL) [undocumented] */
     ADD_ENABL_ARG(FPT, ARGS_DSABL, ARGS_NO_FLAGS       );  /* Floating-point truncation */
     ADD_ENABL_ARG(GBL, ARGS_ENABL, ARGS_NO_FLAGS       );  /* Undefined symbols are allowed and are global */
     ADD_ENABL_ARG(LC,  ARGS_ENABL, ARGS_NO_FLAGS       );  /* Lower-case */
@@ -443,12 +458,13 @@ void add_dirargs(
     ADD_ENABL_ARG(PNC, ARGS_ENABL, ARGS_NOT_IMPLEMENTED);  /* Generate binary code */
     ADD_ENABL_ARG(REG, ARGS_ENABL, ARGS_NOT_IMPLEMENTED);  /* Use default register definitions */
 
-    ADD_LIST_ARG(LIS,          1,  ARGS_NO_FLAGS       );  /* Listing level */
+    ADD_LIST_ARG(LIS,          0,  ARGS_NO_FLAGS       );  /* Listing level */
     ADD_LIST_ARG(BEX,  ARGS_LIST,  ARGS_NO_FLAGS       );  /* Binary values which don't fit on the listing line */
     ADD_LIST_ARG(BIN,  ARGS_LIST,  ARGS_NO_FLAGS       );  /* Binary code -- SEQ,LOC,BIN,SRC = whole line */
     ADD_LIST_ARG(CND,  ARGS_LIST,  ARGS_NO_FLAGS       );  /* Unsatisfied conditional coding */
     ADD_LIST_ARG(COM,  ARGS_LIST,  ARGS_NO_FLAGS       );  /* Comments -- subset of SRC */
     ADD_LIST_ARG(HEX,  ARGS_NLIST, ARGS_NO_FLAGS       );  /* Use HEX radix */
+    ADD_LIST_ARG(LD,   ARGS_NLIST, ARGS_HIDDEN         );  /* Seems to only be a flag (but not used) [undocumented] */
     ADD_LIST_ARG(LOC,  ARGS_LIST,  ARGS_NO_FLAGS       );  /* Location counter -- SEQ,LOC,BIN,SRC = whole line */
     ADD_LIST_ARG(MC,   ARGS_LIST,  ARGS_NO_FLAGS       );  /* Macro calls and repeat range expansions */
     ADD_LIST_ARG(MD,   ARGS_LIST,  ARGS_NO_FLAGS       );  /* Macro definitions and repeat range [expansions] */
@@ -485,10 +501,12 @@ void dump_dirargs(
 {
     int i;
 
-#define ARG_FLAGS(arg) (arg & ARGS_IGNORE_THIS    ) ? '#' : \
-                       (arg & ARGS_NO_FUNCTION    ) ? '.' : \
-                       (arg & ARGS_NOT_IMPLEMENTED) ? '-' : \
-                       (arg & ARGS_NOT_SUPPORTED  ) ? '*' : ' '
+#define ARG_FLAGS(arg) ((arg & ARGS_NOT_SUPPORTED  ) ? '*' : \
+                        (arg & ARGS_NOT_IMPLEMENTED) ? '-' : \
+                        (arg & ARGS_IGNORE_THIS    ) ? '#' : \
+                        (arg & ARGS_HIDDEN         ) ? ';' : \
+                        (arg & ARGS_NO_FUNCTION    ) ? '.' : \
+                        (arg & ARGS_MUST_SUPPORT   ) ? '!' : ' ')
 
     fprintf(stderr, "%s.ENABL", (prefix == NULL) ? "" : prefix);
     for (i = 0; i < ARGS__LAST; i++)
@@ -517,14 +535,10 @@ static void usage_dirarg(
     int shown = 0;
     int i;
 
-    /* Note that L_LIS does not use the flags and will not be shown here if < 1 or > 1
-     * This will only happen if '-h' is appended to a -e LIS or -d LIS,LIS etc. */
-    /* TODO: Fix this! */
-
     for (i = 0; i < ARGS__LAST; i++) {
        if (enabl_list_arg[i].flags & type) {
-           if ((!enabl_list_arg[i].defval) == (!tf_value)) {  
-               if ((enabl_list_arg[i].flags & ~ARGS_ALL_TYPES) == 0) {
+           if ((!enabl_list_arg[i].defval) == (!tf_value)) {
+               if ((enabl_list_arg[i].flags & ~ARGS_VISIBLE) == 0) {
                     if (!shown) {
                         shown = 1;
                         fprintf(stderr, "   %s %s", prefix, enabl_list_arg[i].name);
@@ -553,6 +567,12 @@ void usage_dirargs(
 
 
 /* lookup_arg finds the enum of a .ENABL or .DSABL directive */
+
+/* MACRO-11 V05.05 is a lot more flexible with arguments.
+ * Appended characters to the name (if > 3 characters) are ignored.
+ * E.g. .LIST BINARY is valid as is .NLIST HEXADECIMAL.
+ * TODO: If not STRINGENT we could do this too.  This code already
+ *       supports it - we need to do it when we call lookup_arg(). */
 
 int lookup_arg(
     const char argnam[4],
@@ -592,8 +612,6 @@ void add_symbols(
     reg_sym[6] = ADD_SYM_REGISTER("SP", 6);
     reg_sym[7] = ADD_SYM_REGISTER("PC", 7);
     REG_ERR    = ADD_SYM_REGISTER("%E", REG_ERR_VALUE);  /* Used for invalid register-number (%0-%7) usage */
-
-#undef ADD_SYM_REGISTER
 
 /**********************************************************************/
 
@@ -671,8 +689,6 @@ void add_symbols(
     ADD_SYM_PSEUDO(".TITLE",   P_TITLE);
     ADD_SYM_PSEUDO(".WEAK",    P_WEAK);
     ADD_SYM_PSEUDO(".WORD",    P_WORD);
-
-#undef ADD_SYM_PSEUDO
 
 /**********************************************************************/
 
@@ -810,6 +826,8 @@ void add_symbols(
     ADD_SYM_INST("LDEXP",  I_LDEXP,  OC_FPP_SRCAC);
     ADD_SYM_INST("LDF",    I_LDF,    OC_FPP_FSRCAC);
     ADD_SYM_INST("LDFPS",  I_LDFPS,  OC_1GEN);
+    ADD_SYM_INST("LDSC",   I_LDSC,   OC_NONE);        /* Load Step Counter (11/45) */
+    ADD_SYM_INST("LDUB",   I_LDUB,   OC_NONE);        /* Load microbreak register (11/60, 11/45) */
     ADD_SYM_INST("MODD",   I_MODD,   OC_FPP_FSRCAC);
     ADD_SYM_INST("MODF",   I_MODF,   OC_FPP_FSRCAC);
     ADD_SYM_INST("MULD",   I_MULD,   OC_FPP_FSRCAC);
@@ -820,8 +838,9 @@ void add_symbols(
     ADD_SYM_INST("SETF",   I_SETF,   OC_NONE);
     ADD_SYM_INST("SETI",   I_SETI,   OC_NONE);
     ADD_SYM_INST("SETL",   I_SETL,   OC_NONE);
-    ADD_SYM_INST("STA0",   I_STA0,   OC_NONE);        /* 11/45 Maintenance Right Shift */
-    ADD_SYM_INST("STB0",   I_STB0,   OC_NONE);        /* Diagnostic Floating Point */
+    ADD_SYM_INST("STA0",   I_STA0,   OC_NONE);        /* Store AR in AC0 (11/45) */
+    ADD_SYM_INST("STB0",   I_STB0,   OC_NONE);        /* Diagnostic Floating Point [Maintenance Right Shift] */
+    ADD_SYM_INST("STQ0",   I_STQ0,   OC_NONE);        /* Store QR in AC0 (11/45) */
     ADD_SYM_INST("STCDF",  I_STCDF,  OC_FPP_ACFDST);
     ADD_SYM_INST("STCDI",  I_STCDI,  OC_FPP_ACFDST);
     ADD_SYM_INST("STCDL",  I_STCDL,  OC_FPP_ACFDST);
@@ -907,18 +926,42 @@ void add_symbols(
     ADD_SYM_INST("SUBP",   I_SUBP,          OC_NONE);
     ADD_SYM_INST("SUBPI",  I_SUBP|I_CIS_I,  OC_CIS3);
 
-#undef ADD_SYM_INST
+/**********************************************************************/
+
+#define UNSUPPORT_ARG(arg) \
+        if (!(enabl_list_arg[arg].flags & ARGS_MUST_SUPPORT)) \
+            enabl_list_arg[arg].flags |= ARGS_NOT_SUPPORTED
+
+    if (STRINGENT) {
+        UNSUPPORT_ARG(E_BMK);
+        UNSUPPORT_ARG(E_DBG);
+    }
+
+    if (support_m11) {
+        enabl_list_arg[E_PIC].flags &= ~ARGS_NOT_SUPPORTED;
+        enabl_list_arg[E_PIC].flags |=  ARGS_NOT_IMPLEMENTED;  /* TODO: Add PIC checks like 'TST @#rel or TST abs' */
+        ADD_SYM_PSEUDO(".MACR", P_MACRO);                      /* Probably never used anyway */
+        ADD_SYM_INST("CNZ", I_CLN | I_CLZ, OC_NONE);           /* This neither */
+    } else if (STRINGENT) {
+        UNSUPPORT_ARG(L_LD);
+    }
+
+#undef UNSUPPORT_ARG
 
 /**********************************************************************/
 
     /* TODO: Why are we doing this (it seems to work without) */
 
     if (!STRINGENT)
-        add_sym(current_section->label, 0,  
+        add_sym(current_section->label, 0,
              /* 0, // This was the original flags value */
              /* (SYMBOLFLAG_PERMANENT | SYMBOLFLAG_DEFINITION), */
                 SYMBOLFLAG_UNDEFINED,
                 current_section, &section_st, NULL);
+
+#undef ADD_SYM_REGISTER
+#undef ADD_SYM_PSEUDO
+#undef ADD_SYM_INST
 }
 
 /* sym_hist is a diagnostic function that prints a histogram of the
@@ -954,8 +997,8 @@ static int rad50order(
                            /*  :        */
                            /* 'Z' = 26. */
         R50_DOLLAR = 033,  /* '$' = 27. */
-        R50_DOT    = 034,  /* '.' = 28. */
-        R50_UL     = 035,  /* '_' = 29. */
+        R50_PERIOD = 034,  /* '.' = 28. */
+        R50_ULINE  = 035,  /* '_' = 29. */
         R50_DIGIT  = 036,  /* '0' = 30. */
                            /*  :        */
                            /* '9' = 39. */
@@ -976,10 +1019,10 @@ static int rad50order(
         return R50_DOLLAR;
 
     case '.':
-        return R50_DOT;
+        return R50_PERIOD;
 
     case '_':
-        return R50_UL;
+        return R50_ULINE;
     }
 
     if (!iscntrl(c))
@@ -1111,26 +1154,36 @@ void list_symbol_table(
                 for (line = 0; line < nlines; line++) {
                     int             i;
                     int             format_num = (LIST(HEX) != 0);
-                    const char     *format3[2] = {  /* 3-digit numbers */
-                                        "  %03d",   /* .NLIST HEX */  /* TODO: Change to %03o (!) */
-                                        " %02X"     /* .LIST  HEX */
+                    const char     *format3[3] = {  /* 3-digit numbers (section number) */
+                                        "%5.3o",    /* .NLIST HEX */
+                                        "%3.2X",    /* .LIST  HEX */
+                                        "%4.3u"     /* .LIST  LD  */
                                     };
-                    int             length3[2] = {  /* Length of format3 */
+                    int             length3[3] = {  /* Length of format3 */
                                         5,          /* .NLIST HEX */
-                                        3           /* .LIST  HEX */
+                                        3,          /* .LIST  HEX */
+                                        4           /* .LIST  LD  */
                                     };
-                    const char     *format6[2] = {  /* 6-digit numbers */
+                    const char     *format6[3] = {  /* 6-digit numbers (address or value) */
                                         "%06o",     /* .NLIST HEX */
-                                        "%04X"      /* .LIST  HEX */
+                                        "%04X",     /* .LIST  HEX */
+                                        "%5u"       /* .LIST  LD  */
+
                                     };
-                    int             length6[2] = {  /* Length of format6 */
+                    int             length6[3] = {  /* Length of format6 */
                                         6,          /* .NLIST HEX */
-                                        4           /* .LIST  HEX */
+                                        4,          /* .LIST  HEX */
+                                        5           /* .LIST  LD  */
                                     };
-                    int             gap_len[2] = {  /* Length of gap after symbol */
+
+                    int             gap_len[3] = {  /* Length of gap after symbol */
                                         1,          /* .NLIST HEX */
-                                        4           /* .LIST  HEX */
+                                        5,          /* .LIST  HEX */
+                                        3           /* .LIST  LD  */
                                     };
+
+                    if (LIST(LD))
+                        format_num = 2;
 
                     for (i = line; i < nsyms; i += nlines) {
                         sym = symbols[i];
@@ -1151,15 +1204,17 @@ void list_symbol_table(
                         fprintf(lstfile, "%c", (sym->flags & SYMBOLFLAG_LOCAL) ?   'L' : ' ');
                         fprintf(lstfile, "%c", (sym->flags & SYMBOLFLAG_WEAK) ?    'W' : ' ');
 
-                        if (sym->section->sector != 0 /* TODO: enable this -> && sym->section != &blank_section */) {
+
+                        if (sym->section->sector != 0 &&
+                            (sym->section != &blank_section || symbol_list_locals)) {
                             fprintf(lstfile, format3[format_num], sym->section->sector);
                         } else {
                         /*  if (i + nlines < nsyms)  // The right-hand edge lines up when commented out */
-                                fprintf(lstfile, "%.*s", length3[format_num], "      ");
+                                fprintf(lstfile, "%*s", length3[format_num], "");
                         }
 
-                    /*  if (i + nlines < nsyms) // TODO: enable this! */
-                            fprintf(lstfile, "%.*s", gap_len[format_num], "      ");
+                        if (i + nlines < nsyms)
+                            fprintf(lstfile, "%*s", gap_len[format_num], "");
                     }
                     fprintf(lstfile,"\n");
                 }
@@ -1186,15 +1241,19 @@ void list_section(
 {
     int             flags      = sec->flags;
     int             format_num = (LIST(HEX) != 0);
-    const char     *format[2]  = {
-                        "%-6s  %06o    %03d   ",    /* .NLIST HEX */  /* TODO: Change to %03o (!) */
-                        "%-6s  %04X    %02X      "  /* .LIST  HEX */
+    const char     *format[3]  = {
+                        "%-6s  %06o  %5.3o   ",      /* .NLIST HEX */
+                        "%-6s  %04X   %3.2X      ",  /* .LIST  HEX */
+                        "%-6s  %5u   %4.3u    "      /* .LIST  LD  */
                     };
 
     if (sec == NULL) {
         fprintf(lstfile, "(null)\n");  /* Should never happen */
         return;
     }
+
+    if (LIST(LD))
+        format_num = 2;
 
     fprintf(lstfile, format[format_num],
             sec->label, sec->size & 0177777, sec->sector);
@@ -1205,5 +1264,5 @@ void list_section(
            (flags & PSECT_GBL)  ?  "GBL" : "LCL",
            (flags & PSECT_REL)  ?  "REL" : "ABS",
            (flags & PSECT_COM)  ?  "OVR" : "CON",
-           (flags & PSECT_SAV)  ? ",SAV" : /* TODO: enable -> (STRINGENT && !rt11) ? "" : */ ",NOSAV");
+           (flags & PSECT_SAV)  ? ",SAV" : (STRINGENT && !rt11) ? "" : ",NOSAV");
 }

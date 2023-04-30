@@ -6,19 +6,21 @@
 #endif
 
 #define PROGRAM_NAME "macro11"
-#define BASE_VERSION "0.8.4"
+#define BASE_VERSION "0.8.5"
+#define THIS_VERSION BASE_VERSION " (28 Apr 2023)"     // Mike Hill
+//      THIS_VERSION "0.8.5"      " (28 Apr 2023)"     // Mike Hill
+//      THIS_VERSION "0.8.4"      " (04 Apr 2023)"     // Mike Hill
+//      THIS_VERSION "0.8.3"      " (28 Mar 2023)"     // Mike Hill
+//      THIS_VERSION "0.8.2"      " (21 Mar 2023)"     // Mike Hill
+//      THIS_VERSION "0.8.1"      " (09 Mar 2023)"     // Mike Hill
+//      THIS_VERSION "0.8"        " (07 Jul 2022)"     // Olaf 'Rhialto' Seibert
+//      THIS_VERSION "0.3"        " (April 21, 2009)"  // Joerg Hoppe
+//      THIS_VERSION "0.2"        "   July 15, 2001"   // Richard Krehbiel
 
 #if defined(GIT_VERSION)
 #define VERSIONSTR   BASE_VERSION " (" GIT_VERSION "\n        " GIT_AUTHOR_DATE ")"
 #else
-#define VERSIONSTR BASE_VERSION " (04 Apr 2023 compiled on " __DATE__ " at " __TIME__ ")"
-//      VERSIONSTR "0.8.4"      " (04 Apr 2023)"
-//      VERSIONSTR "0.8.3"      " (28 Mar 2023)"
-//      VERSIONSTR "0.8.2"      " (21 Mar 2023)"
-//      VERSIONSTR "0.8.1"      " (09 Mar 2023)"
-//      VERSIONSTR "0.8"        " (07 Jul 2022)"
-//      VERSIONSTR "0.3"        " (April 21, 2009)"
-//      VERSIONSTR "0.2"        "   July 15, 2001"
+#define VERSIONSTR   THIS_VERSION " compiled on " __DATE__ " at " __TIME__ ")"
 #endif
 
 
