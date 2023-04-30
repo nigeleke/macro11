@@ -1137,14 +1137,15 @@ void list_symbol_table(
                 /*
                  * .NLIST HEX ->
                  * DIRER$=%004562RGX   006.
-                 * ^      ^^     ^     ^-- for R symbols: program segment number (if > 1 segment with relocatables)
-                 * |      ||     +-- Flags: R = relocatable
-                 * |      ||                G = global
-                 * |      ||                X = implicit global
-                 * |      ||                L = local
-                 * |      ||                W = weak
-                 * |      |+- value, ****** for if it was not a definition
-                 * |      +-- % for a register
+                 * ^     ^^^     ^     ^-- for R symbols: program segment number (if > 1 segment with relocatables)
+                 * |     |||     +-- Flags: R = relocatable
+                 * |     |||                G = global
+                 * |     |||                X = implicit global
+                 * |     |||                L = local
+                 * |     |||                W = weak
+                 * |     ||+- value, ****** for if it was not a definition
+                 * |     |+-- % for a register
+                 * |     +--- = for an absolute value, blank for relocatable
                  * +- label name
                  *
                  * .LIST HEX ->
