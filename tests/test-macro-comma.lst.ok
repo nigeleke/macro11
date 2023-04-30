@@ -103,15 +103,16 @@
       1 000034  000005  000004          	.word	5,4
      70 000040                          	tstdef	a=5,a=4		; Duplicate keyword argument -- legal!
       1 000040  000004  000002          	.word	4,2
-     70
+     71
+     72         000001                          .end
 
 
 Symbol table
 
-LABEL = 000003           START   000000R      001 .       000044R      001 
+LABEL = 000003           START   000000R         
 
 
 Program sections
 
-. ABS.  000000    000   (RW,I,GBL,ABS,OVR,NOSAV)
-        000044    001   (RW,I,LCL,REL,CON,NOSAV)
+. ABS.  000000    000   (RW,I,GBL,ABS,OVR)
+        000044    001   (RW,I,LCL,REL,CON)

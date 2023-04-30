@@ -79,22 +79,23 @@ test-endm.mac:46: ***ERROR No conditional block active
      62 000012  000000G                     M8                  ; not defined yet; will be taken as implied .word.
      63 000014                              M7                  ; defines M8.
       1 000014  000007                       .word      7
-      2                                      .if        p2
+      2              1=                      .if        p2
       3                                       .macro    M8      ; only defined in pass 2
       4                                        .word    8.
       5                                       .endm     M8      ; ok
       6                                      .endc
      64 000016                              M8                  ; which can now be used.
       1 000016  000010                         .word    8.
-     64
+     65
+     66         000001                      .end
 
 
 Symbol table
 
-M8    = ****** GX        .       000020R      001 
+M8    = ****** GX       
 
 
 Program sections
 
-. ABS.  000000    000   (RW,I,GBL,ABS,OVR,NOSAV)
-        000020    001   (RW,I,LCL,REL,CON,NOSAV)
+. ABS.  000000    000   (RW,I,GBL,ABS,OVR)
+        000020    001   (RW,I,LCL,REL,CON)

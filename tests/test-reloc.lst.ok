@@ -1,6 +1,6 @@
       1                                 	.TITLE  Test references that need (no) relocation
       2
-      3 000000                          	.PSECT  FOO,I,RW
+      3 000000     002                  	.PSECT  FOO,I,RW
       4
       5 000000  000042                  	.WORD	42
       6 000002  000000                  Y:	.WORD	0
@@ -36,7 +36,7 @@
      36
      37                                 	.dsabl AMA
      38
-     39 000000                          	.ASECT
+     39 000000     000                  	.ASECT
      40         001000                  	.=1000
      41
      42         001234                  X=1234
@@ -78,11 +78,11 @@
 
 Symbol table
 
-X     = 001234           Y       000002R      002 .     = 001030           
+X     = 001234           Y       000002R      002
 
 
 Program sections
 
-. ABS.  001030    000   (RW,I,GBL,ABS,OVR,NOSAV)
-        000000    001   (RW,I,LCL,REL,CON,NOSAV)
-FOO     000034    002   (RW,I,LCL,REL,CON,NOSAV)
+. ABS.  001030    000   (RW,I,GBL,ABS,OVR)
+        000000    001   (RW,I,LCL,REL,CON)
+FOO     000034    002   (RW,I,LCL,REL,CON)

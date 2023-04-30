@@ -287,11 +287,10 @@ test-float.mac:186: ***ERROR Junk at end of line ('5        ; bad: junk')
 
 Symbol table
 
-A     = 000001           AC1   =%000001           F2    =%000002           
-AC0   =%000000           E3    = 000003           .       001314R      001 
+A     = 000001           AC0   =%000000           AC1   =%000001           E3    = 000003           F2    =%000002          
 
 
 Program sections
 
-. ABS.  000000    000   (RW,I,GBL,ABS,OVR,NOSAV)
-        001314    001   (RW,I,LCL,REL,CON,NOSAV)
+. ABS.  000000    000   (RW,I,GBL,ABS,OVR)
+        001314    001   (RW,I,LCL,REL,CON)

@@ -77,16 +77,16 @@
      65 000366  000007  000010          l1:     .word 7, 10     ; long integer
      66 000372     116     117     120  t1:     .ascii /NOPABC/ ; translation table
         000375     101     102     103
-     66
+     67
+     68         000001                          .end
 
 
 Symbol table
 
-D1      000362R      001 S1      000352R      001 T1      000372R      001 
-L1      000366R      001 S2      000356R      001 .       000400R      001 
+D1      000362R          L1      000366R          S1      000352R          S2      000356R          T1      000372R         
 
 
 Program sections
 
-. ABS.  000000    000   (RW,I,GBL,ABS,OVR,NOSAV)
-        000400    001   (RW,I,LCL,REL,CON,NOSAV)
+. ABS.  000000    000   (RW,I,GBL,ABS,OVR)
+        000400    001   (RW,I,LCL,REL,CON)

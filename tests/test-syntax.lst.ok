@@ -50,15 +50,16 @@ test-syntax.mac:38: ***ERROR Invalid syntax (comma expected)
      40                                 ;; page 2-3:
      41                                 ;; An operator is terminated by a space, tab, or any non-Radix-50 character,
      42 000000  017700  000001'                 mov@a,r0
-     42
+     43
+     44         000001                          .end
 
 
 Symbol table
 
-A     = 000001           .       000004R      001 
+A     = 000001          
 
 
 Program sections
 
-. ABS.  000000    000   (RW,I,GBL,ABS,OVR,NOSAV)
-        000004    001   (RW,I,LCL,REL,CON,NOSAV)
+. ABS.  000000    000   (RW,I,GBL,ABS,OVR)
+        000004    001   (RW,I,LCL,REL,CON)

@@ -10,35 +10,31 @@
      10 000002     001                      .iif idn <hallo> <HALLO>	.byte 1
      11 000003     001                      .iif idn <HAllo> <halLO>	.byte 1
      12
-     13                                     .iif dif <hallo> <hallo>	.byte 0
-     14                                     .iif dif <HALLO> <hallo>	.byte 0
-     15                                     .iif dif <hallo> <HALLO>	.byte 0
-     16                                     .iif dif <HAllo> <halLO>	.byte 0
+     13              0=                     .iif dif <hallo> <hallo>	.byte 0
+     14              0=                     .iif dif <HALLO> <hallo>	.byte 0
+     15              0=                     .iif dif <hallo> <HALLO>	.byte 0
+     16              0=                     .iif dif <HAllo> <halLO>	.byte 0
      17
      18                                     .enabl lcm
      19                                     ; Now: case sensitive
      20
      21 000004     001                      .iif idn <hallo> <hallo>	.byte 1
-     22                                     .iif idn <HALLO> <hallo>	.byte 0
-     23                                     .iif idn <hallo> <HALLO>	.byte 0
-     24                                     .iif idn <HAllo> <halLO>	.byte 0
+     22              0=                     .iif idn <HALLO> <hallo>	.byte 0
+     23              0=                     .iif idn <hallo> <HALLO>	.byte 0
+     24              0=                     .iif idn <HAllo> <halLO>	.byte 0
      25
-     26                                     .iif dif <hallo> <hallo>	.byte 0
+     26              0=                     .iif dif <hallo> <hallo>	.byte 0
      27 000005     001                      .iif dif <HALLO> <hallo>	.byte 1
      28 000006     001                      .iif dif <hallo> <HALLO>	.byte 1
      29 000007     001                      .iif dif <HAllo> <halLO>	.byte 1
      30
      31                                     ; Setting is now non-default.
      32                                     ; Check if it reverts to default in the next pass.
-     32
-
-
-Symbol table
-
-.       000010R      001 
+     33
+     34         000001                      .end
 
 
 Program sections
 
-. ABS.  000000    000   (RW,I,GBL,ABS,OVR,NOSAV)
-        000010    001   (RW,I,LCL,REL,CON,NOSAV)
+. ABS.  000000    000   (RW,I,GBL,ABS,OVR)
+        000010    001   (RW,I,LCL,REL,CON)

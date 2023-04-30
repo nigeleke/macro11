@@ -21,10 +21,15 @@
      21 000024  000121                  	.word	123 & 771	; 000121
      22 000026  123323                  	.word	123121 ! 322	; 123323
      23         000005                  five = 5
+**:0: ***WARNING '_' is not strictly allowed
      24 000030  001230                  a:	.word	123 _ 3	 	; 001230
+**:0: ***WARNING '_' is not strictly allowed
      25 000032  000500                  	.word	five _ 6	; 000500
+**:0: ***WARNING '_' is not strictly allowed
      26 000034  004040                  	.word	101_five	; 004040
+**:0: ***WARNING '_' is not strictly allowed
      27 000036  000377                  	.word	177400 _ -8.	; 000377
+**:0: ***WARNING '_' is not strictly allowed
      28 000040  000000C                 	.word	a _ 3		; Complex relocation
      29
      30 000042  177401                  	.word	- 377		; 177401
@@ -44,11 +49,17 @@
      44 000074  000051                  	.word	^r AA		; 000051
      45 000076  003101                  	.word	^rA A		; 003101
      46 000100  003150                  	.word	^rAA		; 003150
+**:0: ***WARNING ^R<...> is not strictly allowed
      47 000102  003151                  	.word	^r^/AAA/	; bracketed strings are an extension
+**:0: ***WARNING ^R<...> is not strictly allowed
      48 000104  070254                  	.word	^r<RAD>		; bracketed strings are an extension
+**:0: ***WARNING ^R<...> is not strictly allowed
      49 000106  000054                  	.word	^r< AD>		; bracketed strings are an extension
+**:0: ***WARNING ^R<...> is not strictly allowed
      50 000110  000004                  	.word	^r<  D>		; bracketed strings are an extension
+**:0: ***WARNING ^R<...> is not strictly allowed
      51 000112  070204                  	.word	^r<R D>		; bracketed strings are an extension
+**:0: ***WARNING ^R<...> is not strictly allowed
      52 000114  070250                  	.word	^r<RA >		; bracketed strings are an extension
      53 000116  157614                  	.word	^R50.		; 157614 there is no whitespace in between.
      54 000120  040300                  	.word	^f 1.5		; 040300
@@ -88,10 +99,11 @@ test-prec.mac:64: ***ERROR Invalid expression (complex relocation)
      87 000136                                  dirdef name
       1 000136  130461  051010                  .rad50  /.name/
       2 000142     000     000                  .byte   +0,        0
-      3                                         .if df
+test-prec.mac:87->DIRDEF:3: ***ERROR Missing symbol name
+      3              0=                         .if df
       4                                         .globl  opcerr
       5                                         .word   opcerr
-      6                                         .iff
+      6              1=                         .iff
       7                                         .globl  name
       8 000144  000000G                         .word   name
       9                                         .endc
@@ -127,16 +139,17 @@ test-prec.mac:100: ***ERROR Invalid expression in .WORD
     107 000164  070254                  	.word	^rRAD50CHARACTERS ; 070254 extra characters ignored
     108 000166  000001                  	.word	^r  A..EXTRA	; 000001 extra characters ignored
     109 000170  000002                  	.word	^r  A..EXTRA+1	; 000002 extra characters ignored
-    109
+    110
+    111         000001                          .end
 
 
 Symbol table
 
-A       000030R      001 NAME  = ****** G         .       000172R      001 .2    = ****** GX        
-FIVE  = 000005           $     = ****** GX        .1    = ****** GX        .3    = ****** GX        
+A       000030R          NAME  = ****** G         .1    = ****** GX        .3    = ****** GX       
+FIVE  = 000005           $     = ****** GX        .2    = ****** GX       
 
 
 Program sections
 
-. ABS.  000000    000   (RW,I,GBL,ABS,OVR,NOSAV)
-        000172    001   (RW,I,LCL,REL,CON,NOSAV)
+. ABS.  000000    000   (RW,I,GBL,ABS,OVR)
+        000172    001   (RW,I,LCL,REL,CON)

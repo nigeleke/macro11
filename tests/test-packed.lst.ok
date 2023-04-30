@@ -24,16 +24,16 @@
      24   0011      01      23      4F          .packed 1234,   u124len
      25   0014      12      34      5F          .packed 12345,  u125len
      26
-test-packed.mac:27: ***ERROR Redefining permanent symbol 'LAB'
+test-packed.mac:27: ***WARNING Redefining permanent symbol 'LAB'
      27   0017      31      41      5F  lab:    .packed 31415,  lab     ; M error (multiply defined)
-test-packed.mac:28: ***ERROR Redefining permanent symbol 'L2'
+test-packed.mac:28: ***WARNING Redefining permanent symbol 'L2'
      28   001A      2F                  l2::    .packed 2,l2            ; M error (multiply defined)
      29           0003                  l3 = 3
      30   001B      3F                          .packed 3,l3            ; redef'n ok
      31           0004                  l4 == 4
      32   001C      4F                          .packed 4,l4            ; redef'n ok
      33           0005                  l5 =: 5                         ; M error; why???
-test-packed.mac:34: ***ERROR Redefining permanent symbol 'L5'
+test-packed.mac:34: ***WARNING Redefining permanent symbol 'L5'
      34   001D      5F                          .packed 5,l5            ; M error
      35
      36   001E      12      34      56          .packed 1234567890123456789012345678901
@@ -55,25 +55,24 @@ test-packed.mac:38: ***ERROR Too many packed decimal digits
      46                                         .endm
      47
      48   002E                                  name
-test-packed.mac:48->NAME:1: ***ERROR Redefining permanent symbol 'LAB'
+test-packed.mac:48->NAME:1: ***WARNING Redefining permanent symbol 'LAB'
       1           0000                          .narg   lab             ; redefinition
-test-packed.mac:48->NAME:2: ***ERROR Redefining permanent symbol 'LAB'
+test-packed.mac:48->NAME:2: ***WARNING Redefining permanent symbol 'LAB'
       2           0002                          .nchr   lab,//          ; redefinition
-test-packed.mac:48->NAME:3: ***ERROR Redefining permanent symbol 'LAB'
+test-packed.mac:48->NAME:3: ***WARNING Redefining permanent symbol 'LAB'
       3           0017                          .ntype  lab,#3          ; redefinition
      49           0001                          .end
 
 
 Symbol table
 
-LAB     0017R     01    N0    = 0000            P0LEN = 0001            U1LEN = 0001            .       002ER     01    
-L2      001ARG    01    N0LEN = 0001            P1LEN = 0001            U12LEN= 0002            
-L3    = 0001            N1LEN = 0001            P12LEN= 0002            U123LE= 0003            
-L4    = 0001 G          N12LEN= 0002            U0    = 0000            U124LE= 0004            
-L5    = 0005            P0    = 0000            U0LEN = 0001            U125LE= 0005            
+LAB     0017R            L5    = 0005             N12LEN= 0002             P12LEN= 0002             U12LEN= 0002        
+L2      001ARG           N0    = 0000             P0    = 0000             U0    = 0000             U123LE= 0003        
+L3    = 0001             N0LEN = 0001             P0LEN = 0001             U0LEN = 0001             U124LE= 0004        
+L4    = 0001 G           N1LEN = 0001             P1LEN = 0001             U1LEN = 0001             U125LE= 0005        
 
 
 Program sections
 
-. ABS.  0000    00      (RW,I,GBL,ABS,OVR,NOSAV)
-        002E    01      (RW,I,LCL,REL,CON,NOSAV)
+. ABS.  0000    00      (RW,I,GBL,ABS,OVR)
+        002E    01      (RW,I,LCL,REL,CON)

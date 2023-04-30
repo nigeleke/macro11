@@ -25,15 +25,11 @@ test-rept.mac:20: ***ERROR .REPT value must be constant
      21 000014  005200                                  inc     r0
 test-rept.mac:22: ***ERROR No repeat block active
      22                                                 .endr
-     22
-
-
-Symbol table
-
-.       000016R      001 
+     23
+     24         000001                                  .end
 
 
 Program sections
 
-. ABS.  000000    000   (RW,I,GBL,ABS,OVR,NOSAV)
-        000016    001   (RW,I,LCL,REL,CON,NOSAV)
+. ABS.  000000    000   (RW,I,GBL,ABS,OVR)
+        000016    001   (RW,I,LCL,REL,CON)

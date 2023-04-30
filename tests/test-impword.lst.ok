@@ -12,15 +12,16 @@ test-impword.mac:10: ***ERROR Invalid expression in .WORD
      11                                         ; The following can by accident be parsed as an expression.
      12 000006  000000G 150007  000001  	macro	7-BIT,1,2,3
         000014  000002  000003
-     12
+     13
+     14         000001                          .end
 
 
 Symbol table
 
-MACRO = ****** GX        START   000000R      001 .       000020R      001 
+MACRO = ****** GX        START   000000R         
 
 
 Program sections
 
-. ABS.  000000    000   (RW,I,GBL,ABS,OVR,NOSAV)
-        000020    001   (RW,I,LCL,REL,CON,NOSAV)
+. ABS.  000000    000   (RW,I,GBL,ABS,OVR)
+        000020    001   (RW,I,LCL,REL,CON)

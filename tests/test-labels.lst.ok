@@ -8,16 +8,16 @@
       8 000004  000777                  lab3:	lab4:	br	lab4
       9 000006  000777                  lab5::	lab6::	lab7:	br	lab7
      10
-     10
+     11         000001                          .end
 
 
 Symbol table
 
-LAB1    000000R      001 LAB3    000004R      001 LAB5    000006RG     001 LAB7    000006R      001 
-LAB2    000002RG     001 LAB4    000004R      001 LAB6    000006RG     001 .       000010R      001 
+LAB1    000000R          LAB3    000004R          LAB5    000006RG         LAB7    000006R         
+LAB2    000002RG         LAB4    000004R          LAB6    000006RG        
 
 
 Program sections
 
-. ABS.  000000    000   (RW,I,GBL,ABS,OVR,NOSAV)
-        000010    001   (RW,I,LCL,REL,CON,NOSAV)
+. ABS.  000000    000   (RW,I,GBL,ABS,OVR)
+        000010    001   (RW,I,LCL,REL,CON)

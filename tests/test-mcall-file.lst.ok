@@ -20,15 +20,11 @@
         000041     141     040     146
         000044     151     154     145
         000047     056     000
-      8
-
-
-Symbol table
-
-.       000051R      001 
+      9
+     10         000001                          .end
 
 
 Program sections
 
-. ABS.  000000    000   (RW,I,GBL,ABS,OVR,NOSAV)
-        000051    001   (RW,I,LCL,REL,CON,NOSAV)
+. ABS.  000000    000   (RW,I,GBL,ABS,OVR)
+        000051    001   (RW,I,LCL,REL,CON)
