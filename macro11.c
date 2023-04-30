@@ -681,11 +681,12 @@ int main(
     if (obj != NULL)
         fclose(obj);
 
-    if (enabl_debug)
+    if (enabl_debug) {
         if (execute_p1 && execute_p2)
             dump_dirargs("End of pass 2: ");
         else
             dump_dirargs("End of pass:   ");
+    }
 
     if (lstfile) {
         migrate_undefined();           /* Migrate the undefined symbols */
