@@ -1137,7 +1137,7 @@ void list_symbol_table(
                 /*
                  * .NLIST HEX ->
                  * DIRER$=%004562RGX   006.
-                 * ^     ^^^     ^     ^-- for R symbols: program segment number (if > 1 segment with relocatables)
+                 * ^     ^^^     ^     ^-- for R symbols: program segment number (unless ". ABS." or ". BLK.")
                  * |     |||     +-- Flags: R = relocatable
                  * |     |||                G = global
                  * |     |||                X = implicit global

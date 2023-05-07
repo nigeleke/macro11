@@ -1,6 +1,29 @@
 
 ----------- Mike Hill's entries ------------------
 
+04-May-2023: Mike Hill
+        Correct symbol-table comment: for R symbols: program segment number (unless ". ABS." or ". BLK.")
+        - symbols.c
+        Add some comments about suppressing .LIST and .NLIST listing lines
+        - assemble.c (and add a comment about always suppressing .PAGE if .NLIST COM)
+        Updated version to 0.8.6 on (04 May 2023)
+        - macro11.h
+
+30-Apr-2023: Rhialto
+        Fixes to make the code GCC compliant
+        - stream2.c
+          inject_source() now uses memmove() instead of strcpy() for overlapping move
+        - listing.c
+          Renamed trunc() to trunc_line() to avoid potential confusion over trunc() in math.h
+          Added { ... } in list_process() to fix GCC warning
+          Added (int) cast for offsetof(LSTFORMAT, ...)
+        - assemble.c
+          Added { ... } at P_PRINT to fix a missing pair (oops) and fix a GCC warning
+        - macro11.c
+          Added { ... } around 'if (enabl_debug)' to fix GCC warning
+        - symbols.c
+          Added a comment for '=' signifying absolute symbol values
+
 28-Apr-2023: Mike Hill
         Add '-s' command line option to prepend source lines
         - stream2.h

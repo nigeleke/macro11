@@ -790,7 +790,7 @@ do_mcalled_macro:
 
                 case P_PAGE:
                     /* Note that V05.05 even suppresses lines with labels on them (!) */
-                    if (*cp == ';')
+                    if (*cp == ';' /* && LIST(COM) */)      /* Choose if .NLIST COM should always suppress .PAGE */
                         list_line_act |= LIST_PAGE_BEFORE;  /* Extension: list the .PAGE if it has a comment */
                     else
                         list_line_act |= LIST_PAGE_BEFORE | LIST_SUPPRESS_LINE;  /* TODO: Check for labels (?) */
@@ -1360,6 +1360,10 @@ do_mcalled_macro:
 
                         /* Note that V05.05 does not list '.LIST' and '.NLIST' lines ...
                          * ... even if they start with a label e.g. 'LABEL: .LIST' */
+
+#if NODO  /* Set to 1 if you want to always suppress .[N]LIST lines like MACRO-11 V05.05 */
+                        DONT_LIST_THIS_LINE();  /* Don't list .[N]LIST if within a macro expansion */
+#else
                         if (within_macro_expansion(stack->top)) {
                             DONT_LIST_THIS_LINE();  /* Don't list .[N]LIST if within a macro expansion */
                         } else {
@@ -1368,6 +1372,7 @@ do_mcalled_macro:
                             else if (list_level <= 0)
                                 DONT_LIST_THIS_LINE();  /* Extension: if transitioning outside the 'expected' levels */
                         }
+#endif
 
                         if (enabl_debug) {
                             MUST_LIST_THIS_LINE();  /* Always list the line for -yd */
