@@ -335,9 +335,15 @@ static void list_process(
             if (!LIST(BEX) || !LIST(BIN))
                 return;  /* If no sequence number, suppress the BEX line */
         } else if (!LIST(COM)) {
+#if NODO  /* Don't forget to #include "parse.h" */
+            if (listline[0] == '\0' || *skipwhite(listline) == ';')
+            /*  if (binline[0] == ' ')  */
+                    return;  /* Completely suppress comment-only lines and blank lines */
+#else
             if (listline[0] == ';' || listline[0] == '\0')
             /*  if (binline[0] == ' ')  */
                     return;  /* Completely suppress LHS-comment lines and blank lines */
+#endif
         }
 
         /* Handle .NLIST ME,MEB */

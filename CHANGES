@@ -1,6 +1,26 @@
 
 ----------- Mike Hill's entries ------------------
 
+09-May-2023: Mike Hill
+        Change "FATAL INTERNAL ERROR" if 'A=1 // A=B // B=2 // .END' to "warning"
+        - symbols.c
+          This [incorrect] warning message will now only be visible on pass 1 if '-yl1 -yl1' is provided
+        If .SBTTL occurs within a macro call, don't show the sequence number in the TOC
+        - assemble.c
+          P_SBTTL now shows a blank sequence (line) number in this case
+        Fix .GLOBAL UNDEF // .IF DF UNDEF ... incorrectly returning TRUE if -strict
+        - assemble.c
+          eval_ifdf_ifndf() now checks if SYM_IS_IMPORTED()
+            Also suppress the warning message if there is no parameter to .I[I]F [N]DF with -ym11
+          Re-ran tests (-ym11 -strict and -stringent): exec.m11 (listing changes expected - but no changes in .OBJ)
+        Added DODO analog to TODO and NODO (because it's easy to grep/FIND it)
+        - util.h (#define DODO)
+        - assemble.c (use DODO in the comment from 04-May-2023)
+        Add a "NODO" compile-time option to make .NLIST COM suppress comment-only lines instead of only LHS-comments
+        - listing.c
+        Updated version to 0.8.7 on (09 May 2023)
+        - macro11.h
+
 04-May-2023: Mike Hill
         Correct symbol-table comment: for R symbols: program segment number (unless ". ABS." or ". BLK.")
         - symbols.c

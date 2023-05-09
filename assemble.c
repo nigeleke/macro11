@@ -69,8 +69,9 @@ static int eval_ifdf_ifndf(
             SYMBOL         *sym;
 
             if ((label = get_symbol(cp, &ncp, &islocal)) == NULL) {
-                if (STRICTER)  /* m11 allows a missing symbol */
-                    report_err(stack->top, "Missing symbol name\n");
+                if (!support_m11)  /* m11 allows a missing symbol */
+                   if (!RELAXED)   /* TODO: We will never be RELAXED until we change P_IF (!) */
+                        report_err(stack->top, "Missing symbol name\n");
                 return 0;  /* Assume a missing symbol returns FALSE */
             }
             if (islocal) {
@@ -81,7 +82,9 @@ static int eval_ifdf_ifndf(
             sym = lookup_sym(label, &symbol_st);
             found = (sym != NULL);
             if (found) {
-                 if (sym->flags & SYMBOLFLAG_UNDEFINED) {
+                 if (SYM_IS_IMPORTED(sym)) {                              /* Unassigned global symbols are undefined */
+                    found = 0;
+                 } else if (sym->flags & SYMBOLFLAG_UNDEFINED) {          /* Symbols marked undefined are undefined */
                     found = 0;
                  } else if (sym->section->type == SECTION_INSTRUCTION) {  /* Opcodes are undefined */
                     found = 0;
@@ -843,9 +846,12 @@ do_mcalled_macro:
                     }
 
                     cp[strcspn(cp, "\n")] = '\0';
-                    fprintf(lstfile, "%*s%*d%*s- %.119s\n",
+                    /* TODO: Instead of suppressing the sequence number within macro calls ...
+                     *       ... we could go back up the chain until we find a 'useful' one */
+                    fprintf(lstfile, "%*s%*.0d%*s- %.119s\n",
                                      (int) SIZEOF_MEMBER(LSTFORMAT, flag), "",
-                                     (int) SIZEOF_MEMBER(LSTFORMAT, line_number), stack->top->line,
+                                     (int) SIZEOF_MEMBER(LSTFORMAT, line_number),
+                                     (int) (within_macro_expansion(stack->top)) ? 0 : stack->top->line,
                                      (int) SIZEOF_MEMBER(LSTFORMAT, gap_after_seq), "",
                                      cp);
                     return 1;
@@ -1361,7 +1367,7 @@ do_mcalled_macro:
                         /* Note that V05.05 does not list '.LIST' and '.NLIST' lines ...
                          * ... even if they start with a label e.g. 'LABEL: .LIST' */
 
-#if NODO  /* Set to 1 if you want to always suppress .[N]LIST lines like MACRO-11 V05.05 */
+#if NODO  /* Set to DODO if you want to always suppress .[N]LIST lines like MACRO-11 V05.05 */
                         DONT_LIST_THIS_LINE();  /* Don't list .[N]LIST if within a macro expansion */
 #else
                         if (within_macro_expansion(stack->top)) {

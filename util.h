@@ -71,6 +71,8 @@ void            my_searchenv(
 
 #define NODO 0                         /* Use in '#if NODO ... #endif' if we know we don't want to do something */
 #define TODO 0                         /* Use in '#if TODO ... #endif' where there really is something to-do */
+#define DODO 1                         /* Use in '#if DODO ... #endif' to do something you wanted to-do */
+                                       /* grep "ODO" to find all occurrances of these and "TODO" comments */
 
 
 /* EOL says whether a char* is pointing at the end of a line */

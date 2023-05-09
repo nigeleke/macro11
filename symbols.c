@@ -378,7 +378,7 @@ SYMBOL         *add_sym(
             sym->flags &= ~(SYMBOLFLAG_PERMANENT | SYMBOLFLAG_UNDEFINED);
         }
         else if (!(sym->flags & SYMBOLFLAG_UNDEFINED) && (flags & SYMBOLFLAG_UNDEFINED)) {
-            report_fatal(stream, "INTERNAL ERROR: Turning defined symbol '%s' into undefined\n", label);
+            report_warn(stream, /* "INTERNAL ERROR: " */ "Turning defined symbol '%s' into undefined\n", label);
             return sym;
         }
         /* Check for compatible definition */
