@@ -46,6 +46,9 @@ int             report_errcnt = 0;       /* Count the number of times report() h
 int             show_error_lines = 0;    /* Show the line with the error when reporting errors */
 int             show_print_lines = 0;    /* Show .PRINT lines (similar to show_error_lines) */
 
+int             exit_if_pass = PASS2+1;  /* Exit if a fatal error occurs on this pass [or higher] */
+int             exit_requested = 0;      /* Set to TRUE if a 'fatal' exit is requested  (-fe only) */
+
 static int      errline = 0;             /* Set if current line has an error */
 
 
@@ -55,7 +58,7 @@ static int can_list(
     void)
 {
     int             ok = lstfile != NULL &&
-                         (pass > 0 || list_pass_0);
+                         (pass > PASS1 || list_pass_0);
 
     return ok;
 }
@@ -67,7 +70,7 @@ static int build_list(
     void)
 {
     int             ok = can_list() ||
-                         (show_error_lines && pass > 0);
+                         (show_error_lines && pass > PASS1) /* || exit_if_pass >= pass */;
 
     return ok;
 }
@@ -450,7 +453,7 @@ static void list_process(
 void show_error_line(  /* Synonym for show_print_line() */
     void)
 {
-    if (!pass)
+    if (pass == PASS1)
         return;
 
     if (!build_list())
@@ -477,8 +480,8 @@ void list_flush(
     if (build_list()) {
         /* Remember: binline might be empty (but never NULL) */
         if (errline) {
-            list_line_act &= ~LIST_SUPPRESS_LINE;  /* Error lines are never suppressed */
-            if (show_error_lines || pass == 0) {   /* TODO: Do this on both passes (?) */
+            list_line_act &= ~LIST_SUPPRESS_LINE;      /* Error lines are never suppressed */
+            if (show_error_lines || pass == PASS1) {   /* TODO: Do this on both passes (?) */
                 int             i;
 
                 /* TODO: Implement error-letters like MACRO-11 (not trivial) */
@@ -503,7 +506,7 @@ void list_flush(
     }
 
     if (dolist()) {
-        if (!pass)
+        if (pass == PASS1)
             list_line_act &= ~LIST_SUPPRESS_LINE;  /* Never suppress lines on pass 1 (for -yl1) */
 
         if (list_line_act & LIST_SUPPRESS_LINE) {
@@ -521,6 +524,13 @@ void list_flush(
             list_line_act &= ~LIST_PAGE_AFTER;   /* ... turn it into ... */
             list_line_act |=  LIST_PAGE_BEFORE;  /* ... a LIST_PAGE_BEFORE */
         }
+    }
+
+    /* Show the line in error (if any) and exit if a fatal error occurred with -fe or -fe2 */
+    if (exit_requested) {
+        if (listline != NULL && *listline != '\0')
+            fprintf(stderr, "%.132s\n", listline);
+        exit(EXIT_FAILURE);
     }
 
     if (build_list()) {
@@ -630,8 +640,8 @@ void list_value_if(
 
 
 /* list_3digit_value is used to show a '3-digit' computed value */
-/* This is similar to list_value() except only the first 3 digits of value will be zero-filled */
-/* Also, if the value is < 0 it will be shown as a +ve value with a '-' flag */
+/* This is similar to list_value() except only the first 3 digits of value will be zero-filled. */
+/* Also, if the value is < 0 it will be shown as a +ve value with a '-' flag. */
 
 void list_3digit_value(
     STREAM *str,
@@ -640,20 +650,17 @@ void list_3digit_value(
     (STREAM *) str;  /* This parameter is currently unused */
 
     if (build_list()) {
-        if (word & 0x8000)
-            list_format_value(str, "%6.3o", 0x8000 - (word & 0x7fff), '-');
-        else
-            list_format_value(str, "%6.3o", word, '\0');
+        list_format_value(str, "%6.3o", word, '\0');
     }
 }
 
 
-/* list_short_value is used to show a 'short' computed value */
-/* This is similar to list_value() except the value will not be zero-filled */
-/* Also, if the value is < 0 it will be shown as a +ve value with a '-' flag */
+/* list_signed_value is used to show a signed 'short' computed value */
+/* This is similar to list_value() except the value will not be zero-filled. */
+/* If the value is >=0 it will be shown with a '+' flag. */
+/* Also, if the value is < 0 it will be shown as a +ve value with a '-' flag. */
 
-#if NODO  /* Possible future use ... */
-void list_short_value(
+void list_signed_value(
     STREAM *str,
     unsigned word)
 {
@@ -663,10 +670,9 @@ void list_short_value(
         if (word & 0x8000)
             list_format_value(str, "%6o", 0x8000 - (word & 0x7fff), '-');
         else
-            list_format_value(str, "%6o", word, '\0');
+            list_format_value(str, "%6o", word, '+');
     }
 }
-#endif
 
 
 /* list_short_value_if is used to show a 'short' computed value for .IFT/.IFF/.IFTF and .IIF */
@@ -737,19 +743,27 @@ void report_generic(
     switch (type) {
 
     case REPORT_WARNING:
-        if (!pass && list_pass_0 < 2)
+        if (pass == PASS1 && list_pass_0 < 2)
             return;                    /* Don't report now */
         mess = "WARNING";
         break;
 
     case REPORT_ERROR:
-        if (!pass && list_pass_0 < 2)
+        if (pass == PASS1 && list_pass_0 < 2)
             return;                    /* Don't report now */
         mess = "ERROR";
         break;
 
     case REPORT_FATAL:
         mess = "FATAL";
+        if (pass >= exit_if_pass) {
+            exit_requested = TRUE;
+            show_error_lines = FALSE;  /* We don't want the message twice */
+            if (str == NULL) {
+                if (listline != NULL)
+                    listline[0] = '\0';
+            }
+        }
         break;
 
     default:
@@ -794,7 +808,7 @@ void report(
         UPD_DEBUG_SYM(DEBUG_SYM_ERRCNT, report_errcnt);
 
     errline++;
-    if (!pass && list_pass_0 < 2)
+    if (pass > PASS1 && list_pass_0 < 2)
         return;                        /* Don't report now. */
 
     if (str) {

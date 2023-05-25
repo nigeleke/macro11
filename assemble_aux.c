@@ -203,7 +203,7 @@ unsigned get_register(
 void implicit_gbl(
     EX_TREE *value)
 {
-    if (pass || !value)
+    if (pass > PASS1 || !value)
         return;                        /* Only do this in first pass */
 
     switch (num_subtrees(value)) {
@@ -731,20 +731,21 @@ int do_word(
 
             if (value->type != EX_ERR && value->cp > cp) {
                 store_value(stack, tr, size, value);
-
                 cp = value->cp;
             } else {
+                char *byteword[] = { "BYTE", "WORD" };
+
                 if (value->type == EX_ERR &&
                     value->cp != NULL &&
                     value->data.child.right == NULL &&
                     value->data.child.left != NULL &&
                     value->data.child.left->type == EX_LIT) {
-                    report_warn(stack->top, "Invalid expression stored in .WORD\n");
+                    report_warn(stack->top, "Invalid expression stored in .%s\n", byteword[size - 1]);
 
                     store_value(stack, tr, size, value->data.child.left);
                     cp = value->cp;
                 } else {
-                    report_err(stack->top, "Invalid expression in .WORD\n");
+                    report_err(stack->top, "Invalid expression in .%s\n", byteword[size - 1]);
                     cp = "";                /* force loop to end */
                 }
             }

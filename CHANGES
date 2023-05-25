@@ -1,6 +1,95 @@
 
 ----------- Mike Hill's entries ------------------
 
+25-May-2023: Mike Hill
+        - macro11.c      - Fix usage message for '-fe'
+        - assemble_aux.c - Change "Invalid expression ... in .WORD" to ".BYTE" where appropriate
+        - assemble.c     - Fix .CROSS .NOCROSS .GLOBL .WEAK bug if arg was invalid
+        Check for closing quote in .ASCII .ASCIZ .IDENT .RAD50 if -strict
+        - assemble.c
+          assemble_rad50()  + also enforce MACRO-11 quirk of x...X being valid but x...x not
+          P_ASCII & P_ASCIZ + ditto
+        Fix error message truncation (e.g. "Junk at end of line") when inside a macro call ... use strcspn() now
+        - assemble.c
+        - parse.c
+        Fit 'more' symbols to symbol-table listing
+        - symbols.c - now fits -ysl 8 better (in exactly 80 columns for .LIST TTM)
+          Re-run tests - no differences!
+        Updated date of version 0.8.8 to "(25 May 2023)"
+        - macro11.h
+
+19-May-2023: Mike Hill
+        Add #define PASS1 and PASS2 to improve understanding
+        - assemble_globals.h
+        - assemble_globals.c
+        - assemble_aux.c
+        - macro11.c
+        - listing.c
+        - assemble.c
+
+18-May-2023: Mike Hill
+        Rename -x command-line option to -xtract (to avoid unwanted creation of lots of files if -m supplied)
+        - macro11.c
+          Also change '.END was not supplied' to WARNING instead of ERROR
+        Make .LIST show '+' for >=0 (similar to '-' for <0) and not 3-digits
+        - listing.h
+          Change (was commented-out) list_short_value() to list_signed_value()
+        - listing.c
+          Change (was commented-out) list_short_value() to list_signed_value() and put a '+' for >= 0
+        - assemble.c
+          For P_LIST call list_signed_value() instead of list_3digit_value()
+        Add -fe and -fe2 command-line options to exit on fatal errors (pass 1 or [undocumented] pass 2)
+        - listing.h
+          Declare exit_if_pass and exit_requested (currently only used in listing.c -- future-use globally?)
+        - listing.c
+          Define exit_if_pass and exit_requested
+          'report_fatal()' sets exit_requested if -fe/-fe2
+          list_flush() now exits if exit_requested is TRUE
+        - macro11.c
+          Parse -fe and -fe2 and update 'usage'
+        Re-run tests - All differences were expected (either .LIST/.NLIST or WARNING for no .END)
+
+16-May-2023: Mike Hill
+        Added -xl command-line qualifier to store macro library contents to a single file (or list contents)
+        - mlb.h
+          Declare mlb_list()
+        - mlb2.c
+          Define mlb_list() to do the heavy-lifting
+        - mlb-rt11.c
+          Catch NULL return from  mlb_entry()
+        - macro11.c
+          Update 'usage' with '-xl'
+          Remove (comment-out) command-line support for '-x -m <file>' to extract object modules
+          Only exit from '-x' if we have at least one '-m' file
+          Process the '-xl' option
+        Make the '.IF DF/NDF' code in extree optional (and disable it)
+        - extree.h
+          #define DISABLE_EXTREE_IF_DF_NDF 1 [ or 0 to ENABLE ]
+        - assemble.c
+          eval_ifdf_ifndf() should not WARN with -relaxed or (-ym11 [ -strict ]) if no parameter
+          P_IF now forces use of eval_ifdf_ifndf() if DISABLE_EXTREE_IF_DF_NDF
+        - extree.c
+          Put #if ... #endif around the EVALUATE_DEFINEDNESS stuff
+          Re-run tests - no differences!
+
+15-May-2023: Mike Hill
+        Added -nodev and -nodir command-line options to improve .INCLUDE & .LIBRARY portability
+        - macro11.h
+          Updated BASE_VERSION to "0.8.8"
+        - assemble_globals.h
+          Declared ignore_fn_dev and ignore_fn_dir
+        - assemble_globals.c
+          Defined ignore_fn_dev and ignore_fn_dir
+        - macro11.c
+          Added -nodev and -nodir and updated 'usage'
+        - assemble.c
+          Moved P_LIBRARY to follow P_INCLUDE (because they are closely related)
+          Made "Bad .INCLUDE/.LIBRARY file name" fatal (like MACRO-11 V05.05)
+        - parse.c
+          getstring_fn(): use ignore_fn_d* to cut the device and/or directory from the filename
+            Also change "empty-file" check to be (!RELAXED) instead of (STRICT)
+          Re-ran tests (-ym11 -strict and -stringent): test-include.mac - expected (error occurs in pass 1 too)
+
 09-May-2023: Mike Hill
         Change "FATAL INTERNAL ERROR" if 'A=1 // A=B // B=2 // .END' to "warning"
         - symbols.c

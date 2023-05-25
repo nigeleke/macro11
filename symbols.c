@@ -40,7 +40,6 @@ SYMBOL_TABLE    implicit_st;    /* The symbols which may be implicit globals */
 SYMBOL_TABLE    undefined_st;   /* The symbols which may be undefined */
 
 
-
 void list_section(SECTION *sec);
 
 
@@ -146,6 +145,7 @@ void check_sym_invariants(
     }
 }
 
+
 /* hash_name hashes a name into a value from 0-HASH_SIZE */
 
 int hash_name(
@@ -205,6 +205,7 @@ static SYMBOL  *new_sym(
     return sym;
 }
 
+
 /* Free a symbol. Does not remove it from any symbol table.  */
 
 void free_sym(
@@ -217,6 +218,7 @@ void free_sym(
     }
     free(sym);
 }
+
 
 /* remove_sym removes a symbol from its symbol table. */
 
@@ -237,6 +239,7 @@ void remove_sym(
     if (symp)
         *prevp = sym->next;
 }
+
 
 /* lookup_sym finds a symbol in a table */
 
@@ -261,6 +264,7 @@ SYMBOL         *lookup_sym(
     return sym;
 }
 
+
 /* next_sym - returns the next symbol from a symbol table.  Must be
    preceeded by first_sym.  Returns NULL after the last symbol. */
 
@@ -281,6 +285,7 @@ SYMBOL         *next_sym(
     return iter->current;              /* Got a symbol. */
 }
 
+
 /* first_sym - returns the first symbol from a symbol table. Symbols
    are stored in random order. */
 
@@ -292,6 +297,7 @@ SYMBOL         *first_sym(
     iter->current = NULL;
     return next_sym(table, iter);
 }
+
 
 /* add_table - add a symbol to a symbol table. */
 
@@ -306,8 +312,8 @@ void add_table(
     check_sym_invariants(sym, __FILE__, __LINE__, NULL);
 }
 
-/* add_sym - used throughout to add or update symbols in a symbol
-   table.  */
+
+/* add_sym - used throughout to add or update symbols in a symbol table. */
 
 SYMBOL         *add_sym(
     char *labelraw,
@@ -964,6 +970,7 @@ void add_symbols(
 #undef ADD_SYM_INST
 }
 
+
 /* sym_hist is a diagnostic function that prints a histogram of the
    hash table useage of a symbol table.  I used this to try to tune
    the hash function for better spread.  It's not used now. */
@@ -983,6 +990,7 @@ void sym_hist(
         fputc('\n', lstfile);
     }
 }
+
 
 /* rad50order returns the order of a RAD50 character */
 /* Control-characters return lower than RAD50 and ...
@@ -1031,6 +1039,7 @@ static int rad50order(
     return -1;
 }
 
+
 /* rad50cmp has the same function as strcmp() but with the RAD50 sort order. */
 /* The parameters are expected to contain only characters from the RAD50 set.
  * The sort-order is for the first non-matching character in the two strings.
@@ -1062,6 +1071,7 @@ static int rad50cmp(
     return c1 - c2;
 }
 
+
 /* #define rad50cmp strcmp  // Uncomment this line to disable sorting in RADIX50 order */
 
 int symbol_compar(
@@ -1073,6 +1083,7 @@ int symbol_compar(
 
     return rad50cmp(sa->label, sb->label);
 }
+
 
 void list_symbol_table(
     void)
@@ -1129,15 +1140,16 @@ void list_symbol_table(
                 int nlines;
                 int line;
 
-                ncols = ((LIST(TTM) ? 80 : 132) / (longest_symbol + 19));
+                ncols = (((LIST(TTM) ? 80 : 132) + 1 /* gap_len[] */) / (longest_symbol + 19 /* info. */));
                 if (ncols == 0)
                     ncols = 1;  /* Always fit at least one sym on a line */
                 nlines = (nsyms + ncols - 1) / ncols;
 
                 /*
                  * .NLIST HEX ->
-                 * DIRER$=%004562RGX   006.
-                 * ^     ^^^     ^     ^-- for R symbols: program segment number (unless ". ABS." or ". BLK.")
+                 * <Symb>1234567890123456789 = info.
+                 * DIRER$=%004562RGX    006
+                 * ^     ^^^     ^      ^-- for R symbols: program segment number (unless ". ABS." or ". BLK.")
                  * |     |||     +-- Flags: R = relocatable
                  * |     |||                G = global
                  * |     |||                X = implicit global
@@ -1236,6 +1248,7 @@ void list_symbol_table(
         }
     }
 }
+
 
 void list_section(
     SECTION *sec)

@@ -69,9 +69,15 @@ static int eval_ifdf_ifndf(
             SYMBOL         *sym;
 
             if ((label = get_symbol(cp, &ncp, &islocal)) == NULL) {
-                if (!support_m11)  /* m11 allows a missing symbol */
-                   if (!RELAXED)   /* TODO: We will never be RELAXED until we change P_IF (!) */
-                        report_err(stack->top, "Missing symbol name\n");
+#if DISABLE_EXTREE_IF_DF_NDF
+                if (RELAXED)
+                    return 0;  /* We allow -relaxed to have no parameter */
+#endif
+                if (support_m11)
+                    if (!STRICTER)
+                        return 0;  /* We allow -ym11 without -strict -strict to have no parameter */
+
+                report_err(stack->top, "Missing symbol name\n");
                 return 0;  /* Assume a missing symbol returns FALSE */
             }
             if (islocal) {
@@ -107,9 +113,12 @@ static int eval_ifdf_ifndf(
 
         cp = skipwhite(ncp);
         op = -1;
-        if (*cp == '&') op = 0;
-        if (*cp == '!') op = 1;
-        if (op < 0) break;
+        if (*cp == '&')
+            op = 0;
+        if (*cp == '!')
+            op = 1;
+        if (op < 0)
+            break;
 	cp++;
     }
     *cpp = cp;
@@ -148,15 +157,12 @@ static unsigned *assemble_rad50(
     unsigned       *ret;
     int             i, len, wcnt;
 
-    /*
-     * Allocate storage sufficient for the rest of
-     * the line.
-     */
+    /* Allocate storage sufficient for the rest of the line. */
     radstr = memcheck(malloc(strlen(cp)));
     len = 0;
 
+    cp = skipwhite(cp);
     do {
-        cp = skipwhite(cp);
         if (*cp == '<') {
             EX_TREE        *value;
             /* A byte value */
@@ -164,32 +170,35 @@ static unsigned *assemble_rad50(
             cp = value->cp;
             if (value->type != EX_LIT) {
                 report_err(stack->top, "Expression must be constant\n");
-                radstr[len++] = 0;
+                radstr[len++] = '\0';
             } else if (value->data.lit >= 050) {
                 report_err(stack->top, "Invalid character value %o\n",
                        value->data.lit & 0xFFFF);
-                radstr[len++] = 0;
+                radstr[len++] = '\0';
             } else {
                 radstr[len++] = (char) value->data.lit;
             }
             free_tree(value);
         } else {
-            char            quote = *cp++;
+            char            quote = (char) toupper((unsigned char) *cp++);  /* MACRO-11 quirk */
 
-            while (*cp && *cp != '\n' && *cp != quote) {
+            while (*cp != '\0' && *cp != '\n' && *cp != quote) {
                 int         ch = ascii2rad50(*cp++);
 
-                if (ch == -1) {
+                if (ch < 0) {
                     report_err(stack->top, "Invalid character '%c'\n", cp[-1]);
-                    radstr[len++] = 0;
+                    radstr[len++] = '\0';
                 } else {
                     radstr[len++] = (char) ch;
                 }
 
             }
-            cp++;  /* Skip closing quote */
+            if (*cp++ != quote) {
+                if (STRICT) {
+                    report_warn(stack->top, "Mismatched quote (%c)\n", quote);
+                }
+            }
         }
-
         cp = skipwhite(cp);
     } while (!EOL(*cp));
 
@@ -204,8 +213,10 @@ static unsigned *assemble_rad50(
     ret = memcheck (malloc (((wcnt < max) ? max : wcnt) * sizeof (int)));
     for (i = 0; i < wcnt; i++) {
         int word = packrad50word(radstr + i * 3, len - (i * 3));
+
         ret[i] = word;
     }
+
     /* If max is specified, zero fill */
     for (; i < max; i++)
         ret[i] = 0;
@@ -562,7 +573,7 @@ O    75                                         .endc
                                   abs_section_addr(current_pc->section), &symbol_st, stack->top);
                 } else {
                     report_err(stack->top, "Complex expression cannot be assigned to a symbol\n");
-                    if (!pass) {
+                    if (pass == PASS1) {
                         /* This may work better in pass 2 - something in
                            RT-11 monitor needs the symbol to apear to be
                            defined even if I can't resolve its value. */
@@ -834,7 +845,7 @@ do_mcalled_macro:
                     if (lstfile == NULL)
                         return 1;  /* Ignore if we are not listing */
 
-                    if (pass || (list_pass_0 && LIST(LIS) >= 0))
+                    if (pass == PASS2 || (list_pass_0 && LIST(LIS) >= 0))
                         return 1;  /* Ignore if on pass 2 or listing pass 1 itself */
 
                     if (!LIST(TOC))
@@ -857,21 +868,13 @@ do_mcalled_macro:
                     return 1;
 
                 case P_IDENT:
-                    if (ident)          /* An existing ident? */
-                        free(ident);    /* Discard it. */
+                    {
+                        if (ident)          /* An existing ident? */
+                            free(ident);    /* Discard it. */
 
-                    /* TODO: .IDENT (eol)     ;*A error - and handled correctly here
-                     *       .IDENT //        ;   Okay  - and handled correctly here
-                     *       .IDENT /X/ /Y/   ;   Okay  - and handled correctly here
-                     *       .IDENT xABCX     ;   Okay  - need to fix
-                     *       .IDENT xABCx     ;*A error
-                     *       .IDENT /abc      ;*A no (or mismatched) terminator
-                     *       .IDENT /abc+ef/  ;*A error - and handled correctly here
-                     *       .IDENT /ABC/DEF  ;*A Junk at EOL
-                     *       Only discard the old ident if the new one is valid */
-
-                    ident = assemble_rad50(cp, 2, NULL, stack);
-                    return 1;
+                        ident = assemble_rad50(cp, 2, NULL, stack);
+                        return 1;
+                    }
 
                 case P_RADIX:
                     {
@@ -1118,7 +1121,7 @@ do_mcalled_macro:
                         char            hitfile[FILENAME_MAX];
 
                         if (name == NULL) {
-                            report_err(stack->top, "Bad .INCLUDE file name\n");
+                            report_fatal(stack->top, "Bad .INCLUDE file name\n");
                             return 0;
                         }
 
@@ -1128,8 +1131,8 @@ do_mcalled_macro:
                         name = defext(name, "MAC");
                         my_searchenv(name, "INCLUDE", hitfile, sizeof(hitfile));
 
-                        /* TODO: if (STRICT) exit if we can't .INCLUDE the file ...
-                         *       MACRO-11 throws ".INCLUDE directive file error" and exits */
+                        /* If we can't .INCLUDE the file ...
+                         * ... MACRO-11 throws ".INCLUDE directive file error" and exits */
 
                         if (hitfile[0] == '\0') {
                             report_fatal(stack->top, "Unable to find .INCLUDE file \"%s\"\n", name);
@@ -1148,6 +1151,36 @@ do_mcalled_macro:
                         list_line_act |= LIST_PAGE_AFTER;  /* Throw a page after listing the '.INCLUDE' */
                         return 1;
                     }
+
+                case P_LIBRARY:
+                    {
+                        char           *name = getstring_fn(cp, &cp);
+                        char            hitfile[FILENAME_MAX];
+
+                        if (name == NULL) {
+                            report_fatal(stack->top, "Bad .LIBRARY file name\n");
+                            return 0;
+                        }
+
+                        /* If we can't open the .LIBRARY file ...
+                         * ... MACRO-11 throws ".LIBRARY directive file error" and exits */
+
+                        name = defext (name, "MLB");
+                        my_searchenv(name, "MCALL", hitfile, sizeof(hitfile));
+
+                        if (hitfile[0]) {
+                            mlbs[nr_mlbs] = mlb_open(hitfile, 0);
+                            if (mlbs[nr_mlbs] == NULL) {
+                                report_fatal(stack->top, "Unable to register macro library \"%s\"\n", hitfile);
+                            } else {
+                                nr_mlbs++;
+                            }
+                        } else {
+                            report_fatal(stack->top, "Unable to locate macro library \"%s\"\n", name);
+                        }
+                        free(name);
+                    }
+                    return CHECK_EOL;
 
                 case P_REM:
                     /* Read and list [or discard] lines until one with a closing quote */
@@ -1228,36 +1261,6 @@ do_mcalled_macro:
                         return str != NULL;
                     }
 
-                case P_LIBRARY:
-                    {
-                        char           *name = getstring_fn(cp, &cp);
-                        char            hitfile[FILENAME_MAX];
-
-                        if (name == NULL) {
-                            report_err(stack->top, "Bad .LIBRARY file name\n");
-                            return 0;
-                        }
-
-                        /* TODO: if (STRICT) exit if we can't open the .LIBRARY file ...
-                         *       MACRO-11 throws ".LIBRARY directive file error" and exits */
-
-                        name = defext (name, "MLB");
-                        my_searchenv(name, "MCALL", hitfile, sizeof(hitfile));
-
-                        if (hitfile[0]) {
-                            mlbs[nr_mlbs] = mlb_open(hitfile, 0);
-                            if (mlbs[nr_mlbs] == NULL) {
-                                report_fatal(stack->top, "Unable to register macro library \"%s\"\n", hitfile);
-                            } else {
-                                nr_mlbs++;
-                            }
-                        } else {
-                            report_fatal(stack->top, "Unable to locate macro library \"%s\"\n", name);
-                        }
-                        free(name);
-                    }
-                    return CHECK_EOL;
-
                 case P_MCALL:
                     {
                         for (;;) {
@@ -1316,7 +1319,8 @@ do_mcalled_macro:
 
                 case P_MDELETE:
                     /* MACRO-11 only really uses this to save assembler memory */
-                    /* TODO: After a macro has been .MDELETEd its use should cause an error (OQ) */
+                    /* TODO: After a macro has been .MDELETEd its use should cause an error (OQ)
+                     *       For the moment, we simply ignore the directive (without syntax checking). */
                     return 1;
 
                 case P_MEXIT:
@@ -1350,12 +1354,12 @@ do_mcalled_macro:
 
                 case P_NLIST:
                 case P_LIST:
-                    if (!pass)
+                    if (pass == PASS1)
                         return 1;  /* Ignore .NLIST [*] and .LIST [*] on pass 1 */
 
                     /* TODO: Documentation (6.1.1) says list level < 0 suppresses all lines
                      *       except errors and = 0 uses the .LIST/.NLIST settings else,
-                     *       if > 0 always lists the line */
+                     *       if > 0 always lists the line. */
 
                     if (EOL(*cp)) {
                         if (!ARGS_IGNORE(L_LIS)) {
@@ -1385,7 +1389,7 @@ do_mcalled_macro:
                         }
 
                         /* Could use list_value() or [ list_short_value() ] instead -- Extension to MACRO-11 */
-                        list_3digit_value(stack->top, (list_level >= 0) ?
+                        list_signed_value(stack->top, (list_level >= 0) ?
                                                       (unsigned) list_level :
                                                       (unsigned) 0x8000 | (list_level & 0x7fff));
                         return 1;
@@ -1510,7 +1514,7 @@ do_mcalled_macro:
                         /* If not -strict we only flush the current .INCLUDE etc. */
 
                         if (!STRICTER)
-                            return retval;    /* TODO: Provide better m11 support (-ym11 ?) */
+                            return retval;    /* TODO: Provide better m11 support (using -ym11 ?) */
 
                         /* We stop all further assembly here.
                          * This means ignoring any further files
@@ -1544,6 +1548,10 @@ do_mcalled_macro:
                         if (!label) {
                             report_err(stack->top, "Missing %s condition\n", op->label);
                         } else if (strcmp(label, "DF") == 0) {
+
+#if DISABLE_EXTREE_IF_DF_NDF
+                            ok = eval_ifdf_ifndf(&cp, 1, stack);
+#else  /* Optionally use extree to evaluate definedness */
                             if (STRICT) {
                                 ok = eval_ifdf_ifndf(&cp, 1, stack);
                             } else {
@@ -1554,7 +1562,13 @@ do_mcalled_macro:
                                 ok = eval_defined(value);
                                 free_tree(value);
                             }
+#endif
+
                         } else if (strcmp(label, "NDF") == 0) {
+
+#if DISABLE_EXTREE_IF_DF_NDF
+                            ok = eval_ifdf_ifndf(&cp, 0, stack);
+#else  /* Optionally use extree to evaluate definedness */
                             if (STRICT) {
                                 ok = eval_ifdf_ifndf(&cp, 0, stack);
                             } else {
@@ -1565,6 +1579,8 @@ do_mcalled_macro:
                                 ok = eval_undefined(value);
                                 free_tree(value);
                             }
+#endif
+
                         } else if (strcmp(label, "B") == 0 ||
                                    strcmp(label, "NB") == 0) {
                             /*
@@ -1616,9 +1632,9 @@ do_mcalled_macro:
                             free(thing1);
                             free(thing2);
                         } else if (strcmp(label, "P1") == 0) {
-                            ok = (pass == 0);
+                            ok = (pass == PASS1);
                         } else if (strcmp(label, "P2") == 0) {
-                            ok = (pass == 1);
+                            ok = (pass == PASS2);
                         }
 
                         if (ok >= 0) {
@@ -2028,14 +2044,16 @@ do_mcalled_macro:
                         do {
                             /* Loop and make definitions for comma-separated symbols */
                             label = get_symbol(cp, &ncp, &islocal);
-                            if (label[0] == '.' && label[1] == '\0') {
+                            if (label != NULL && label[0] == '.' && label[1] == '\0') {
                                 free(label);
                                 label = NULL;
                             }
 
                             if (label == NULL) {
+                                int len = strcspn(cp, "\n");
+
                                 report_err(stack->top, "Invalid syntax [symbol expected] ('%.*s')\n",
-                                           (strlen(cp) > 20) ? 20 : strlen(cp)-1, cp);
+                                           (len > 20) ? 20 : len, cp);
                                 return 0;
                             }
 
@@ -2104,14 +2122,11 @@ do_mcalled_macro:
                         return ok && CHECK_EOL;
                     }
 
-                case P_ASCIZ:
                 case P_ASCII:
-
-                    /* TODO: Check for final matching deimiter & do we need toupper() ? */
-
+                case P_ASCIZ:
                     {
+                        cp = skipwhite(cp);
                         do {
-                            cp = skipwhite(cp);
                             if (*cp == '<') {
                                 EX_TREE        *value;
                                 /* A byte value */
@@ -2120,13 +2135,17 @@ do_mcalled_macro:
                                 store_value(stack, tr, 1, value);
                                 free_tree(value);
                             } else {
-                                char            quote = *cp++;
+                                char            quote = (char) toupper((unsigned char) *cp++);  /* MACRO-11 quirk */
 
-                                while (*cp && *cp != '\n' && *cp != quote)
+                                while (*cp != '\0' && *cp != '\n' && *cp != quote)
                                     store_word(stack->top, tr, 1, *cp++);
-                                cp++;  /* Skip closing quote */
-                            }
 
+                                if (*cp++ != quote) {
+                                    if (STRICT) {
+                                        report_warn(stack->top, "Mismatched quote (%c)\n", quote);
+                                    }
+                                }
+                            }
                             cp = skipwhite(cp);
                         } while (!EOL(*cp));
 
@@ -2138,27 +2157,17 @@ do_mcalled_macro:
                     }
 
                 case P_RAD50:
-
-                    /* TODO: .RAD50 (eol)     ;*A error - and handled correctly here
-                     *       .RAD50 //        ;   Okay  - and handled correctly here
-                     *       .RAD50 /X/ /Y/   ;   Okay  - and handled correctly here
-                     *       .RAD50 xABCX     ;   Okay  - need to fix
-                     *       .RAD50 xABCx     ;*A error
-                     *       .RAD50 /abc      ;*A no (or mismatched) terminator
-                     *       .RAD50 /abc+ef/  ;*A error - and handled correctly here
-                     *       .RAD50 /ABC/DEF  ;*A Junk at EOL
-                     *       Only discard the old ident if the new one is valid */
-
                     {
-                        int i, count;
-                        unsigned *rad50;
+                        int             i,
+                                        count;
+                        unsigned       *rad50;
 
                         /* Now assemble the argument */
-                        rad50 = assemble_rad50 (cp, 0, &count, stack);
+                        rad50 = assemble_rad50(cp, 0, &count, stack);
                         for (i = 0; i < count; i++) {
-                            store_word (stack->top, tr, 2, rad50[i]);
+                            store_word(stack->top, tr, 2, rad50[i]);
                         }
-                        free (rad50);
+                        free(rad50);
                     }
                     return 1;
 

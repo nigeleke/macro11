@@ -1,24 +1,24 @@
 #define ASSEMBLE_GLOBALS__C
 
-#include "assemble_globals.h"          /* Own definitions */
+#include "assemble_globals.h"          /* My own definitions */
 
 #include "object.h"
 
 
 /* GLOBAL VARIABLES */
-int             pass = 0;       /* The current assembly pass.  0 = first pass */
-int             stmtno = 0;     /* The current source line number */
-int             radix = 0;      /* The current input conversion radix */
+int             pass;           /* The current assembly pass.  0 = first pass [PASS1] */
+int             stmtno;         /* The current source line number */
+int             radix;          /* The current input conversion radix */
 
-
-int             lsb = 0;        /* The current local symbol section identifier */
-int             lsb_used = 0;   /* Whether there was a local symbol using this lsb */
-int             next_lsb = 0;   /* The number of the next local symbol block */
-int             last_macro_lsb = 0;     /* The last block in which a macro
+int             lsb;            /* The current local symbol section identifier */
+int             lsb_used;       /* Whether there was a local symbol using this lsb */
+int             next_lsb;       /* The number of the next local symbol block */
+int             last_macro_lsb;         /* The last block in which a macro
                                          * automatic label was created */
 
-int             last_locsym = 0;        /* The last local symbol number generated */
+int             last_locsym;            /* The last local symbol number generated */
 
+int             suppressed;             /* Assembly suppressed by failed conditional */
 
 int             enabl_debug = 0;        /* Whether assembler debugging is enabled */
 
@@ -28,7 +28,8 @@ int             abs_0_based = 0;        /* TRUE if all ABSolute sections are zer
 
 int             strictness = 0;         /* Neither -strict nor -relaxed are in effect */
 
-int             suppressed = 0; /* Assembly suppressed by failed conditional */
+int             ignore_fn_dev = 0;      /* Ignore device names in .INCLUDE and .LIBRARY? */
+int             ignore_fn_dir = 0;      /* Ignore directory names in .INCLUDE and .LIBRARY? */
 
 MLB            *mlbs[MAX_MLBS]; /* macro libraries specified on the
                                  * command line */

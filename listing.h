@@ -52,6 +52,9 @@ extern int      report_errcnt;     /* Count the number of times report() has bee
 extern int      show_error_lines;  /* Show the line with the error when reporting errors */
 extern int      show_print_lines;  /* Show .PRINT lines (similar to show_error_lines) */
 
+extern int      exit_if_pass;      /* Exit if a fatal error occurs on this pass [or higher] */
+extern int      exit_requested;    /* Set to TRUE if a 'fatal' exit is requested  (-fe only) */
+
 #endif
 
 
@@ -96,11 +99,9 @@ void            list_3digit_value(
     STREAM *str,
     unsigned word);
 
-/* Possible future use ...
-void            list_short_value(
+void            list_signed_value(
     STREAM *str,
     unsigned word);
-*/
 
 void            list_short_value_if(
     STREAM *str,

@@ -183,13 +183,14 @@ static void print_help(
     printf("\n");
     print_version(stdout);
     printf("Usage:\n");
-    printf("  " PROGRAM_NAME " [-o <file>] [-l {- | <file>}] [-p1 | -p2] [-se] [-sp]\n");
+    printf("  " PROGRAM_NAME " [-o <file>] [-l {- | <file>}] [-p1 | -p2] [-se] [-sp] [-fe[2]]\n");
     printf("          [-h] [-v] [-e <options>] [-d <options>] [-dc <options>]\n");
     printf("          [-a0] [-rsx | -rt11] [-stringent | -strict | -relaxed]\n");
     printf("          [-ym11] [-ysl <num>] [-yus] [-yfl] [-ylls] [-yl1] [-yd]\n");
     printf("          [-s [\"]<statement>[\"]] [-s ...]\n");
+    printf("          [-nodev] [-nodir]\n");
     printf("          [-I <directory>]\n");
-    printf("          [-m <file>] [-p <directory>] [-x]\n");
+    printf("          [-m <file>] [-p <directory>] [-xl] [-xtract]\n");
     printf("          <inputfile> [<inputfile> ...]\n");
     printf("\n");
     printf("Arguments:\n");
@@ -199,14 +200,13 @@ static void print_help(
     printf("-d   disable <options> (see below).\n");
     printf("-dc  disable changing of <options> (see below).\n");
     printf("-e   enable <options> (see below).\n");
+    printf("-fe  fatal errors will abort assembly.\n");
+/*  printf("-fe2 fatal errors will abort assembly on pass 2.\n");  */
     printf("-h   print this help.\n");
     printf("-I   gives the name of a directory in which .INCLUDEd files may be found.\n");
     printf("     Sets environment variable \"INCLUDE\".\n");
     printf("-l   gives the listing file name (.LST).\n");
     printf("     -l - enables listing to stdout.\n");
-    printf("-m   load RSX-11 or RT-11 compatible macro library from which\n");
-    printf("     .MCALLed macros can be found.\n");
-    printf("     Multiple allowed.  Affected by any -rsx or -rt11 which come before.\n");
     printf("-o   gives the object file name (.OBJ).\n");
     printf("-p   gives the name of a directory in which .MCALLed macros may be found.\n");
     printf("     Sets environment variable \"MCALL\".\n");
@@ -217,16 +217,21 @@ static void print_help(
     printf("-sp  shows .PRINT source lines on stderr (similar to -se).\n");
     printf("-v   print version.\n");
 /*  printf("     Violates DEC standard, but sometimes needed.\n");  */
-    printf("-x   invokes " PROGRAM_NAME " to expand the contents of the registered macro\n");
-    printf("     libraries (see -m) into individual .MAC files in the current\n");
-    printf("     directory.  No assembly of input is done.\n");
-    printf("     This must be the last command line option!\n");
     printf("\n");
     printf("-a0        Use sections with ABS,OVR for their own local symbol definitions.\n");
-    printf("-rsx       Generate RSX style object files%s.\n",
-            (rt11 ? "" : " (default)"));
-    printf("-rt11      Generate RT-11 style object files%s.\n",
-            (rt11 ? " (default)" : ""));
+    printf("-nodev     Ignore 'ddn:' style device names in .INCLUDE and .LIBRARY filenames.\n");
+    printf("-nodir     Ignore '[directory]' style names in .INCLUDE and .LIBRARY filenames.\n");
+    printf("-rsx       Generate RSX style object files%s.\n",  (!rt11 ? " (default)" : ""));
+    printf("-rt11      Generate RT-11 style object files%s.\n", (rt11 ? " (default)" : ""));
+    printf("\n");
+    printf("-m         load RSX-11 or RT-11 compatible macro library from which\n");
+    printf("           .MCALLed macros can be found.  Similar to .LIBRARY directive.\n");
+    printf("           Multiple allowed.  Affected by any -rsx or -rt11 which come before.\n");
+    printf("-xl        as -xtract but stores macros to '-l' file. If none, only lists names.\n");
+    printf("-xtract    invokes " PROGRAM_NAME " to expand the contents of the registered\n");
+    printf("           macro libraries (see -m) into individual .MAC files in the\n");
+    printf("           current directory.  No assembly of input is done.\n");
+    printf("           This must be the last command line option!\n");
     printf("\n");
 
     printf("-relaxed   Relax some of the usual rules for source code.\n");
@@ -269,7 +274,7 @@ void prepare_pass(
     int i;
 
     pass = this_pass;
-    assert(pass == 0 || pass == 1);
+    assert(pass == PASS1 || pass == PASS2);
 
     stack_init(stack);
 
@@ -278,7 +283,7 @@ void prepare_pass(
         STREAM         *str = new_file_stream(fnames[i]);
 
         if (str == NULL) {
-            if (pass == 0) {
+            if (pass == PASS1) {
             /* fprintf(stderr, "Unable to open source file %s\n", fnames[i]); */
                 perror(fnames[i]);
             } else {
@@ -302,7 +307,7 @@ void prepare_pass(
         fprintf(lstfile, "******** Starting pass %d ********\n\n", pass + 1);
 
     load_dirargs();
-    if (enabl_debug && pass)
+    if (enabl_debug && pass == PASS2)
         dump_dirargs("Start  pass 2: ");  /* Show the directive argunents before starting pass 2 */
 
     DOT = 0;
@@ -318,17 +323,17 @@ void prepare_pass(
     report_errcnt = 0;
 
     stmtno = 0;
+    radix = 8;
     lsb = 0;
-    next_lsb = 1;
     lsb_used = 0;
+    next_lsb = 1;
     last_macro_lsb = -1;
     last_locsym = START_LOCSYM;
+    suppressed = 0;
     last_cond = -1;
     sect_sp = -1;
-    suppressed = 0;
-    radix = 8;
 
-    if (pass && !toc_shown)
+    if (pass == PASS2 && !toc_shown)
         list_title_line(NULL);
     title_string[0] = '\0';
 
@@ -385,8 +390,8 @@ int main(
     int             list_version = enabl_debug;
     int             strict  = 0;
     int             relaxed = 0;
-    int             execute_p1 = 1;
-    int             execute_p2 = 1;
+    int             execute_p1 = TRUE;
+    int             execute_p2 = TRUE;
 
     add_dirargs();
 
@@ -407,13 +412,17 @@ int main(
                 list_version = enabl_debug;    /* -yd before -v will LIST the version too */
                 print_version(stderr);
             } else if (!strcasecmp(cp, "p1")) {
-                 execute_p1 = 1;
-                 execute_p2 = 0;
+                 execute_p1 = TRUE;
+                 execute_p2 = FALSE;
             } else if (!strcasecmp(cp, "p2")) {
-                 execute_p1 = 0;
-                 execute_p2 = 1;
+                 execute_p1 = FALSE;
+                 execute_p2 = TRUE;
+            } else if (!strcasecmp(cp, "fe")) {
+                exit_if_pass = PASS1;  /* or PASS2 */
+            } else if (!strcasecmp(cp, "fe2")) {
+                exit_if_pass = PASS2;
             } else if (!strcasecmp(cp, "se")) {
-                show_error_lines = 1;
+                show_error_lines = TRUE;
             } else if (!strcasecmp(cp, "sp")) {
                 show_print_lines = 1;
             } else if (!strcasecmp(cp, "e")) {
@@ -441,15 +450,15 @@ int main(
                 enable_tf(argv[arg], -1, ARGS_IGNORE_THIS);
             } else if (!strcasecmp(cp, "m")) {
                 /* Macro library */
-                /* This option gives the name of an RT-11 compatible
-                   macro library from which .MCALLed macros can be
-                   found. */
+                /* This option gives the name of an RT-11 or RSX compatible
+                 * macro library from which .MCALLed macros can be found.
+                 */
                 if(arg >= argc-1 || *argv[arg+1] == '-') {
                     usage("-m must be followed by a macro library file name\n");
                 }
                 arg++;
                 {
-                    int allow_olb = (strcmp(argv[argc-1], "-x") == 0);
+                    int allow_olb = (/* strcmp(argv[argc-1], "-x") == */ 0);  /* -x before -m is not supported (yet) */
 
                     mlbs[nr_mlbs] = mlb_open(argv[arg], allow_olb);
                 }
@@ -519,20 +528,43 @@ int main(
                     fprintf(stderr, "Unable to create list file %s\n", lstname);
                     return /* exit */ EXIT_FAILURE;
                 }
-            } else if (!strcasecmp(cp, "x")) {
-                /* The -x option invokes macro11 to expand the
-                   contents of the registered macro libraries (see -m)
-                   into individual .MAC files in the current
-                   directory.  No assembly of input is done.  This
-                   must be the last command line option.  */
+            } else if (!strcasecmp(cp, "xtract")) {
+                /* The -xtract option invokes macro11 to expand the
+                 * contents of the registered macro libraries (see -m)
+                 * into individual .MAC files in the current
+                 * directory.  No assembly of input is done.  This
+                 * must be the last command line option (and no source code).
+                 */
                 int             m;
 
-                if(arg != argc-1) {
-                    usage("-x must be the last option\n");
+                if(arg != argc-1 || nr_files + nr_slines != 0) {
+                    usage("-xtract must be the last option\n");
                 }
-                for (m = 0; m < nr_mlbs; m++)
-                    mlb_extract(mlbs[m]);
-                return EXIT_SUCCESS;
+                if (nr_mlbs > 0) {
+                    for (m = 0; m < nr_mlbs; m++)
+                        mlb_extract(mlbs[m]);
+                    return /* exit */ EXIT_SUCCESS;
+                }
+            } else if (!strcasecmp(cp, "xl")) {
+                /* The -xl option is like -xtract except all files are
+                 * expanded to the listing-file.  If no listing-file
+                 * is provided, the macro names will be listed to stdout.
+                 * -xl will be ignored if no -m files are provided.
+                 * -xl will allows no source code and will exit in that case.
+                 */
+                if (nr_mlbs > 0) {
+                    int             m;
+
+                    for (m = 0; m < nr_mlbs; m++) {
+                        if (lstfile == NULL) {
+                            printf("%s:-\n", mlbs[m]->name);  /* Heading is the filename */
+                        }
+                        mlb_list(mlbs[m], lstfile);           /* List the macro names or contents */
+                    }
+                    if (arg == argc-1)
+                        if (nr_files + nr_slines == 0)
+                            return /* exit */ EXIT_SUCCESS;   /* Allow -xl to be the last thing on the command line */
+                }
             } else if (!strcasecmp(cp, "ym11")) {
                    support_m11 = 1;
             } else if (!strcasecmp(cp, "ysl")) {
@@ -564,6 +596,10 @@ int main(
                 enabl_debug++;  /* Repeat -yd to increase the debug level */
             } else if (!strcasecmp(cp, "a0")) {
                 abs_0_based = 1;
+            } else if (!strcasecmp(cp, "nodev")) {
+                ignore_fn_dev = 1;
+            } else if (!strcasecmp(cp, "nodir")) {
+                ignore_fn_dir = 1;
             } else if (!strcasecmp(cp, "rt11")) {
                 rt11 = 1;
             } else if (!strcasecmp(cp, "rsx")) {
@@ -624,7 +660,7 @@ int main(
     text_init(&tr, NULL, 0);
 
     if (execute_p1) {
-        prepare_pass(0, &stack, nr_files, fnames, nr_slines, slines);
+        prepare_pass(PASS1, &stack, nr_files, fnames, nr_slines, slines);
         assemble_stack(&stack, &tr);
         report_errcnt_p1 = report_errcnt;
         assert(stack.top == NULL);
@@ -646,7 +682,7 @@ int main(
     sym_hist(&symbol_st, "symbol_st"); /* Draw a symbol table histogram */
 #endif
 
-    if (enabl_debug && list_pass_0 && pass)
+    if (enabl_debug && list_pass_0 && pass == PASS2)
         if (execute_p1)
             dump_dirargs("End of pass 1: ");  /* Show the directive arguments at the end of pass 1 */
 
@@ -654,7 +690,7 @@ int main(
     text_init(&tr, obj, 0);
 
     if (execute_p2) {
-        prepare_pass(1, &stack, nr_files, fnames, nr_slines, slines);
+        prepare_pass(PASS2, &stack, nr_files, fnames, nr_slines, slines);
         errcount = assemble_stack(&stack, &tr);
         assert(stack.top == NULL);
     }
@@ -662,7 +698,7 @@ int main(
     text_flush(&tr);
 
     if (STRICTEST && xfer_address == NULL) {
-        report_err(NULL, ".END was not supplied\n");
+        report_warn(NULL, ".END was not supplied\n");
         errcount++;
     }
 
@@ -734,5 +770,5 @@ Elapsed time: 00:00:00.22
     if (lstfile && strcmp(lstname, "-") != 0)
         fclose(lstfile);
 
-    return errcount > 0 ? EXIT_FAILURE : EXIT_SUCCESS;
+    return /* exit */ errcount > 0 ? EXIT_FAILURE : EXIT_SUCCESS;
 }

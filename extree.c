@@ -325,6 +325,7 @@ EX_TREE        *evaluate_rec(
 
             /* Change some symbols to "undefined" */
 
+#if !DISABLE_EXTREE_IF_DF_NDF
             if (flags & EVALUATE_DEFINEDNESS) {
                 int             is_undefined = 0;
 
@@ -351,14 +352,20 @@ EX_TREE        *evaluate_rec(
                     break;
                 }
             }
+#endif
 
             /* Turn defined absolute symbol to a literal */
             if (!(sym->section->flags & PSECT_REL)
                 && !SYM_IS_IMPORTED(sym)) {
+
+#if DISABLE_EXTREE_IF_DF_NDF
+                res = new_ex_lit(sym->value);
+#else
                 if (flags & EVALUATE_DEFINEDNESS && !sym->value)
                     res = new_ex_lit(1);
                 else
                     res = new_ex_lit(sym->value);
+#endif
 
                 if (sym->section->type == SECTION_REGISTER) {
                     *outflags |= EVALUATE_OUT_IS_REGISTER;

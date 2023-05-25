@@ -49,11 +49,14 @@ DAMAGE.
 static MLB     *mlb_rt11_open(
     char *name,
     int allow_object_library);
+
 static BUFFER  *mlb_rt11_entry(
     MLB *mlb,
     char *name);
+
 static void     mlb_rt11_close(
     MLB *mlb);
+
 static void     mlb_rt11_extract(
     MLB *mlb);
 
@@ -77,7 +80,7 @@ struct mlb_vtbl mlb_rt11_vtbl = {
 
 #define WORD(cp) ((*(cp) & 0xff) + ((*((cp)+1) & 0xff) << 8))
 
-/* BYTEPOS calculates the byte position within the macro libray file.
+/* BYTEPOS calculates the byte position within the macro library file.
    I use this to sort the entries by their start position, in order to
    be able to calculate the entries' sizes, which isn't actually
    stored in the directory. */
@@ -394,10 +397,12 @@ void mlb_rt11_extract(
         char            name[32];
 
         buf = mlb_entry(mlb, mlb->directory[i].label);
-        sprintf(name, "%s.MAC", mlb->directory[i].label);
-        fp = fopen(name, "w");
-        fwrite(buf->buffer, 1, buf->length, fp);
-        fclose(fp);
-        buffer_free(buf);
+        if (buf != NULL) {
+            sprintf(name, "%s.MAC", mlb->directory[i].label);
+            fp = fopen(name, "w");
+            fwrite(buf->buffer, 1, buf->length, fp);
+            fclose(fp);
+            buffer_free(buf);
+        }
     }
 }

@@ -25,9 +25,12 @@ typedef struct cond {
 
 #define SECT_STACK_SIZE 32
 
+#define PASS1   0               /* Value of 'pass' for pass 1 */
+#define PASS2   1               /* Value of 'pass' for pass 2 */
+
 #ifndef ASSEMBLE_GLOBALS__C
 /* GLOBAL VARIABLES */
-extern int      pass;           /* The current assembly pass.  0 = first pass */
+extern int      pass;           /* The current assembly pass.  0 = first pass [PASS1] */
 extern int      stmtno;         /* The current source line number */
 extern int      radix;          /* The current input conversion radix */
 extern int      lsb;            /* The current local symbol section identifier */
@@ -73,19 +76,22 @@ extern int      strictness;     /* How strict (relaxed) do we want to be? */
 #define RELAXED       (strictness <  0)  /* Relax the rules as much as we like */
 #define VERY_RELAXED  (strictness < -1)  /* Relax the rules so much that even .END isn't the end */
 
-extern int      suppressed;     /* Assembly suppressed by failed conditional */
+extern int      suppressed;              /* Assembly suppressed by failed conditional */
 
-extern MLB     *mlbs[MAX_MLBS]; /* macro libraries specified on the command line */
-extern int      nr_mlbs;        /* Number of macro libraries */
+extern int      ignore_fn_dev;           /* Ignore device names in .INCLUDE and .LIBRARY? */
+extern int      ignore_fn_dir;           /* Ignore directory names in .INCLUDE and .LIBRARY? */
 
-extern COND     conds[MAX_CONDS];  /* Stack of recent conditions */
-extern int      last_cond;         /* 0 means no stacked cond. */
+extern MLB     *mlbs[MAX_MLBS];          /* macro libraries specified on the command line */
+extern int      nr_mlbs;                 /* Number of macro libraries */
 
-extern SECTION *sect_stack[SECT_STACK_SIZE]; /* 32 saved sections */
-extern int      dot_stack[SECT_STACK_SIZE];  /* 32 saved sections */
+extern COND     conds[MAX_CONDS];        /* Stack of recent conditions */
+extern int      last_cond;               /* 0 means no stacked cond. */
+
+extern SECTION *sect_stack[SECT_STACK_SIZE]; /* Saved sections: ^psect */
+extern int      dot_stack[SECT_STACK_SIZE];  /* Saved sections: '.'    */
 extern int      sect_sp;        /* Stack pointer */
 
-extern char    *module_name;    /* The module name (taken from the 'TITLE'); */
+extern char    *module_name;    /* The module name (taken from the '.TITLE') */
 
 extern unsigned *ident;         /* .IDENT name (encoded RAD50 value) */
 

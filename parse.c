@@ -74,8 +74,12 @@ int check_eol(
         return 1;
     }
 
-    report_err(stack->top, "Junk at end of line ('%.*s')\n",
-           (strlen(cp) > 20) ? 20 : strlen(cp)-1, cp);
+    {
+        int len = strcspn(cp, "\n");
+
+        report_err(stack->top, "Junk at end of line ('%.*s')\n",
+               (len > 20) ? 20 : len, cp);
+    }
 
     return 0;
 }
@@ -120,20 +124,25 @@ char           *getstring(
  * This should probably follow the similar rules to .ASCII
  * although that is not mentioned in the manual,
  * and MACRO-11 V05.05 does not support it.
+ *
+ * As an extension to MACRO-11 we allow for the device name and
+ * directory name to be ignored.  This is so we can assemble the
+ * same .MAC source-code on platforms which do not support these.
+ * Command line options are '-nodev' and/or '-nodir'.
  */
+
 char           *getstring_fn(
     char *cp,
     char **endp)
 {
     char            endstr[4];
     int             len;
-    char           *str;
 
     if (*cp == '<')    /* MACRO-11 V05.05 exits with a ".INCLUDE directive file error" */
         return NULL;
 
     if (STRICT)  /* Disallow alpha-numeric quote characters */
-        if (!ispunct((unsigned char)*cp))
+        if (!ispunct((unsigned char) *cp))
             return NULL;
 
     endstr[0] = (char) toupper((unsigned char) *cp);  /* MACRO-11 treats upper- and ...  */
@@ -144,18 +153,59 @@ char           *getstring_fn(
 
     len = strcspn(cp, endstr);
 
-    if (STRICT)  /* Disallow empty file name and mismatched quote characters */
+    if (!RELAXED)  /* Disallow [empty file name and] mismatched quote characters */
         if (len == 0 || cp[len] == '\n' || cp[len] == '\0')
             return NULL;
 
     if (endp)
         *endp = cp + len + 1;
 
-    str = memcheck(malloc(len + 1));
-    memcpy(str, cp, len);
-    str[len] = '\0';
+    /* Parse -nodev and -nodir */
+    {
+        char           *str;
+        int             lhs = 0;
+        int             dirbeg = 0;
+        int             nambeg;
+        int             i;
 
-    return str;
+        for (i = 0; i < len; i++) {
+            if (!isalnum((unsigned char) cp[i]))
+                break;
+        }
+        if (cp[i] == ':')
+            dirbeg = i + 1;
+
+        nambeg = dirbeg;
+        if (cp[dirbeg] == '[') {
+            i = strcspn(&cp[dirbeg], "]\n") + dirbeg;
+            if (cp[i] == ']')
+               nambeg = i + 1;
+        }
+
+        if (STRINGENT)  /* Disallow empty file name */
+            if (cp[nambeg] == endstr[0] || cp[nambeg] == endstr[1] || cp[nambeg] == '\n' || cp[nambeg] == '\0')
+                return NULL;
+
+	if (ignore_fn_dev) {
+            lhs  = dirbeg;
+            len -= dirbeg;
+        }
+
+        str = memcheck(malloc(len + 1));  /* Always allocate space for the directory (even if -nodir) */
+        if (ignore_fn_dir) {
+            len -= nambeg - dirbeg;
+            if (lhs < dirbeg) {  /* -nodir AND NOT -nodev, BUT we have a device */
+                memcpy(str, cp, dirbeg);
+                memcpy(&str[dirbeg], &cp[nambeg], len);
+            } else {             /* -nodev and -nodir */
+                memcpy(str, &cp[nambeg], len);
+            }
+        } else {                 /* Not -nodir (but possibly -nodev) */
+            memcpy(str, &cp[lhs], len);
+        }
+        str[len] = '\0';
+        return str;
+    }
 }
 
 

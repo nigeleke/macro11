@@ -1,0 +1,9 @@
+	.TITLE	macro11 - Manual and Features
+	.IDENT	/MSHILL/
+	.REM	/25-May-2023/
+
+; This file is a place-holder for the macro11 documentation.
+; It will, in course, be replaced by a document which,
+; when assembled, can be used as a manual.
+
+	.END
