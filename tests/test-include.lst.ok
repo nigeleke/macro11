@@ -1,3 +1,5 @@
+test-include.mac:14: ***FATAL Bad .INCLUDE file name
+test-include.mac:15: ***FATAL Bad .INCLUDE file name
 test-include.mac:21: ***FATAL Unable to find .INCLUDE file "does-not-exist.mac"
       1                                 ;;;;;
       2                                 ;
@@ -56,9 +58,9 @@ test-include.mac:21: ***FATAL Unable to find .INCLUDE file "does-not-exist.mac"
 
      12                                 ; these are errors: (in MACRO V05.05, some terminate the assembler)
      13
-test-include.mac:14: ***ERROR Bad .INCLUDE file name
+test-include.mac:14: ***FATAL Bad .INCLUDE file name
      14                                         .include <incl.mac>
-test-include.mac:15: ***ERROR Bad .INCLUDE file name
+test-include.mac:15: ***FATAL Bad .INCLUDE file name
      15                                         .include <incl.mac<
 test-include.mac:16: ***WARNING Redefining permanent symbol '.INCLU'
      16                                         .include =incl.mac=             ; looks like assignment

@@ -32,7 +32,7 @@
      51 000124  016061  001234  004567  	mov	 1234(r0),4567(r1)	; comment
      52                                 	.list	seq,loc,bin,src         ; reset to list everything
      54                                         .even
-     56            001                  	.list
+     56              1+                 	.list
      58 000132  016061  001234  004567  	mov	 1234(r0),4567(r1)	; comment
      63                                 	.list	hex                     ; list in hexadecimal
      64   0060    1C31    029C    0977  	mov	 1234(r0),4567(r1)	; comment; hex
@@ -100,10 +100,10 @@ test-listing.mac:67: ***WARNING Unsupported .NLIST option 'LD'
       1         000310                          . = . + 2                       ; not listed with only meb but not me
       2 000310  012702  000002                  mov     #2,r2
     103                                         ; .list to +1 follows
-    104            001                          .list
+    104              1+                         .list
     106 000314  016061  001234  004567  	mov	 1234(r0),4567(r1)	; level 1
     109 000322  016061  001234  004567  	mov	 1234(r0),4567(r1)	; level 0
-    113            002-                 	.nlist                          ; to level -2
+    113              2-                 	.nlist                          ; to level -2
     121 000352  016061  001234  004567  	mov	 1234(r0),4567(r1)	; level 0
     123         000001                          .end
 
