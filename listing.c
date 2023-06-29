@@ -24,7 +24,12 @@
 char            title_string[32] = "";   /* .TITLE string (up to 31 characters) */
 int             toc_shown = 0;           /* Flags that at least one .SBTTL was listed in the TOC */
 
+int             page_break_ff = 0;       /* TRUE if -ff (use form-feed for listing page-breaks */
+int             auto_page_break = 0;     /* TRUE if -apb (automatic-page-break) selected */
+int             line_on_page;            /* Current line number on the listing page */
+
 static char    *list_page_fmt = "\n\n";  /* Format to use for the page throw */
+static char    *list_page_ff  = "\f\n";  /* Format to use if page_break_ff is TRUE */
 
 int             list_page_top;           /* Are we at the top of a page? */
 
@@ -197,12 +202,16 @@ void list_title_line(
  *       Or, indeed, all of the first EMPTY lines in a file.  */
 
 void list_throw_page(
-    void)
+    int force_throw)
 {
-    if (dolist() && !list_page_top) {
-        fputs(list_page_fmt, lstfile);
+    if (force_throw || (dolist() && !list_page_top)) {
+        if (page_break_ff)
+            fputs(list_page_ff, lstfile);
+        else
+            fputs(list_page_fmt, lstfile);
     }
     list_page_top = 1;
+    line_on_page = 0;
 }
 
 
@@ -415,8 +424,14 @@ static void list_process(
             list_oct2hex(&binline[offsetof(LSTFORMAT, pc)]);
     }
 
+    /* Handle automatic-page-breaks (-apb) */
+
+    if (auto_page_break && line_on_page >= PAGE_LENGTH)
+        list_throw_page(FALSE);
+
     /* Output the line */
 
+    line_on_page++;
     if (binline[binstart] != '\0') {
         if (symbol_list_locals) {
             if (looked_up_local_sym)
@@ -514,7 +529,7 @@ void list_flush(
         } else {
             if (list_line_act & LIST_PAGE_BEFORE) {
                 list_line_act &= ~LIST_PAGE_BEFORE;
-                list_throw_page();
+                list_throw_page(FALSE);
             }
             if (binline[0])
                 list_process();
@@ -776,7 +791,7 @@ void report_generic(
     }
 
     if (list_line_act & LIST_PAGE_BEFORE)
-        list_throw_page();
+        list_throw_page(FALSE);
 
     fprintf(stderr, "%s:%d: ***%s ", name, line, mess);
     va_start(ap, fmt);
@@ -817,7 +832,7 @@ void report(
     }
 
     if (list_line_act & LIST_PAGE_BEFORE)
-        list_throw_page();
+        list_throw_page(FALSE);
 
     fprintf(stderr, "%s:%d: ***ERROR ", name, line);
     va_start(ap, fmt);

@@ -34,6 +34,10 @@ typedef struct lstformat {
 extern char     title_string[32];  /* .TITLE string (up to 31 characters) */
 extern int      toc_shown;         /* Flags that at least one .SBTTL was listed in the TOC */
 
+extern int      page_break_ff;     /* TRUE if -ff (use form-feed for listing page-breaks */
+extern int      auto_page_break;   /* TRUE if -apb (automatic-page-break) selected */
+extern int      line_on_page;      /* Current line number on the listing page */
+
 extern char    *list_page_fmt;     /* Format to use for the page throw */
 
 extern int      list_page_top;     /* Are we at the top of a page? */
@@ -57,6 +61,7 @@ extern int      exit_requested;    /* Set to TRUE if a 'fatal' exit is requested
 
 #endif
 
+#define PAGE_LENGTH 57             /* Number of listing lines on the page for -apb */
 
 #define MAX_LISTING_LINE_LEN 148   /* V05.05 truncates after 120 characters */
                                    /* The 'binline' part (including LSB) can be up to 48 characters.  This means
@@ -81,7 +86,7 @@ void            list_title_line(
     const char *line2);
 
 void            list_throw_page(
-    void);
+    int force_throw);
 
 void            list_symbol(
     STREAM *str,

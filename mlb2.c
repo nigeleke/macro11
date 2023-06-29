@@ -35,9 +35,12 @@ DAMAGE.
 
 #include <stdlib.h>
 #include <string.h>
-#include "util.h"
+
 #include "mlb.h"
+
+#include "listing.h"
 #include "object.h"
+#include "util.h"
 
 MLB_VTBL *mlb_vtbls[] = {
     &mlb_rsx_vtbl,
@@ -118,6 +121,9 @@ void     mlb_list(
         } else {          /* Store all macros to a single file */
             buf = mlb_entry(mlb, mlb->directory[i].label);
             if (buf != NULL) {
+                if (auto_page_break && i != 0) {
+                    list_throw_page(TRUE);
+                }
                 fwrite(buf->buffer, 1, buf->length, fp);
                 buffer_free(buf);
             }

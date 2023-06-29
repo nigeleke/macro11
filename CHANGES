@@ -1,6 +1,39 @@
 
 ----------- Mike Hill's entries ------------------
 
+29-Jun-2023: Mike Hill
+        Add -apb and -ff command-line qualifiers
+        - listing.h
+          Declare page_break_ff (and list_page_ff) and auto_page_break (and line_on_page) and #define PAGE_LENGTH
+          Add force_throw parameter to list_throw_page()
+        - listing.c
+          Define page_break_ff (and list_page_ff) and auto_page_break (and line_on_page)
+          Update line_on_page and throw new page if > PAGE_LENGTH (only for -apb)
+          If -ff, use \f <FF> for page breaks
+          Add force_throw = FALSE on all calls to list_throw_page()
+        - macro11.c
+          Parse -abp and -ff and update 'usage'
+          Initialize line_on_page on each pass
+        - mlb2.c
+          #include "listing.h"
+          If -apb, put a page-break [ list_throw_page(TRUE) ] between -xl macros
+        - macro11.h
+          Updated date of version 0.8.9 to "(29 Jun 2023)"
+        Re-ran all tests (all OKAY) - just in case.
+
+01-Jun-2023: Mike Hill
+        Change version to 0.8.9
+        - macro11.h
+        Only open .LIBRARY files once
+        - assemble.c
+          Make P_LIBRARY code look the same as P_INCLUDE
+          Scan the mlbs[] for each new hitfile and only open it if it is different to existing ones
+        Scan .MCALLs from the LAST mlb to the FIRST mlb (as documented for V05.00)
+        - macros.c
+        Generate an error if too many MLBs are opened
+        - macro11.c
+        - assemble.c
+
 25-May-2023: Mike Hill
         - macro11.c      - Fix usage message for '-fe'
         - assemble_aux.c - Change "Invalid expression ... in .WORD" to ".BYTE" where appropriate

@@ -1117,16 +1117,18 @@ do_mcalled_macro:
                 case P_INCLUDE:
                     {
                         char           *name = getstring_fn(cp, &cp);
-                        STREAM         *incl;
                         char            hitfile[FILENAME_MAX];
+                        STREAM         *incl;
 
                         if (name == NULL) {
                             report_fatal(stack->top, "Bad .INCLUDE file name\n");
                             return 0;
                         }
 
-                        if (!CHECK_EOL)
+                        if (!CHECK_EOL) {
+                            free(name);
                             return 0;  /* V05.05 does not attempt to .INCLUDE for syntax errors */
+                        }
 
                         name = defext(name, "MAC");
                         my_searchenv(name, "INCLUDE", hitfile, sizeof(hitfile));
@@ -1162,25 +1164,45 @@ do_mcalled_macro:
                             return 0;
                         }
 
+                        if (!CHECK_EOL) {
+                            free(name);
+                            return 0;  /* V05.05 does not attempt to add the .LIBRARY for syntax errors */
+                        }
+
+                        name = defext(name, "MLB");
+                        my_searchenv(name, "MCALL", hitfile, sizeof(hitfile));
+
                         /* If we can't open the .LIBRARY file ...
                          * ... MACRO-11 throws ".LIBRARY directive file error" and exits */
 
-                        name = defext (name, "MLB");
-                        my_searchenv(name, "MCALL", hitfile, sizeof(hitfile));
-
-                        if (hitfile[0]) {
-                            mlbs[nr_mlbs] = mlb_open(hitfile, 0);
-                            if (mlbs[nr_mlbs] == NULL) {
-                                report_fatal(stack->top, "Unable to register macro library \"%s\"\n", hitfile);
-                            } else {
-                                nr_mlbs++;
-                            }
-                        } else {
-                            report_fatal(stack->top, "Unable to locate macro library \"%s\"\n", name);
+                        if (hitfile[0] == '\0') {
+                            report_fatal(stack->top, "Unable to find .LIBRARY file \"%s\"\n", name);
+                            free(name);
+                            return 0;
                         }
                         free(name);
+
+                        /* Only open a specific library ONCE */
+                        {
+                            int i;
+
+                            for (i = 0; i < nr_mlbs; i++) {
+                                if (strcmp(hitfile, mlbs[i]->name) == 0) {
+                                    return 1;
+                                }
+                            }
+                        }
+
+                        if (nr_mlbs < MAX_MLBS) {
+                            mlbs[nr_mlbs] = mlb_open(hitfile, 0);
+                        }
+                        if (nr_mlbs >= MAX_MLBS || mlbs[nr_mlbs] == NULL) {
+                            report_fatal(stack->top, "Unable to register macro library \"%s\"\n", hitfile);
+                        } else {
+                            nr_mlbs++;
+                        }
                     }
-                    return CHECK_EOL;
+                    return 1;
 
                 case P_REM:
                     /* Read and list [or discard] lines until one with a closing quote */

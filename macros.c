@@ -719,18 +719,18 @@ int do_mcall(
     char            macfile[FILENAME_MAX];
     char            hitfile[FILENAME_MAX];
 
-    /* Find the macro in the list of included
-       macro libraries */
+    /* Find the macro in the list of included macro libraries (search LAST to FIRST) */
     macbuf = NULL;
-    for (i = 0; i < nr_mlbs; i++)
+    for (i = nr_mlbs - 1; i >= 0; i--)
         if ((macbuf = mlb_entry(mlbs[i], label)) != NULL)
             break;
     if (macbuf != NULL) {
         macstr = new_buffer_stream(macbuf, label);
         buffer_free(macbuf);
     } else {
-        char *bufend = &macfile[sizeof(macfile)],
-                       *end;
+        char           *bufend = &macfile[sizeof(macfile)];
+        char           *end;
+
         end = stpncpy(macfile, label, sizeof(macfile) - 5);
         if (end >= bufend - 5) {
             report_err(stack->top, ".MCALL: name too long: '%s'\n", label);

@@ -184,7 +184,7 @@ static void print_help(
     print_version(stdout);
     printf("Usage:\n");
     printf("  " PROGRAM_NAME " [-o <file>] [-l {- | <file>}] [-p1 | -p2] [-se] [-sp] [-fe[2]]\n");
-    printf("          [-h] [-v] [-e <options>] [-d <options>] [-dc <options>]\n");
+    printf("          [-h] [-v] [-apb] [-ff] [-e <options>] [-d <options>] [-dc <options>]\n");
     printf("          [-a0] [-rsx | -rt11] [-stringent | -strict | -relaxed]\n");
     printf("          [-ym11] [-ysl <num>] [-yus] [-yfl] [-ylls] [-yl1] [-yd]\n");
     printf("          [-s [\"]<statement>[\"]] [-s ...]\n");
@@ -197,11 +197,13 @@ static void print_help(
     printf("  <inputfile>  MACRO-11 source file(s) to assemble\n");
     printf("\n");
     printf("Options:\n");
+    printf("-apb automatic page-break after %d listing lines (also with -xl).\n", PAGE_LENGTH);
     printf("-d   disable <options> (see below).\n");
     printf("-dc  disable changing of <options> (see below).\n");
     printf("-e   enable <options> (see below).\n");
     printf("-fe  fatal errors will abort assembly.\n");
 /*  printf("-fe2 fatal errors will abort assembly on pass 2.\n");  */
+    printf("-ff  use a form-feed <FF> between listing pages (also with -apb & -xl).\n");
     printf("-h   print this help.\n");
     printf("-I   gives the name of a directory in which .INCLUDEd files may be found.\n");
     printf("     Sets environment variable \"INCLUDE\".\n");
@@ -319,6 +321,8 @@ void prepare_pass(
     else
         list_page_top = 1;  /* TODO: If we implement true pagination, set this to 0 */
 
+    line_on_page = 0;
+
     list_line_act = LIST_PAGE_BEFORE;
     report_errcnt = 0;
 
@@ -411,6 +415,10 @@ int main(
             } else if (!strcasecmp(cp, "v")) {
                 list_version = enabl_debug;    /* -yd before -v will LIST the version too */
                 print_version(stderr);
+            } else if (!strcasecmp(cp, "apb")) {
+                auto_page_break = TRUE;
+            } else if (!strcasecmp(cp, "ff")) {
+                page_break_ff = TRUE;
             } else if (!strcasecmp(cp, "p1")) {
                  execute_p1 = TRUE;
                  execute_p2 = FALSE;
@@ -457,12 +465,12 @@ int main(
                     usage("-m must be followed by a macro library file name\n");
                 }
                 arg++;
-                {
+                if (nr_mlbs < MAX_MLBS) {
                     int allow_olb = (/* strcmp(argv[argc-1], "-x") == */ 0);  /* -x before -m is not supported (yet) */
 
                     mlbs[nr_mlbs] = mlb_open(argv[arg], allow_olb);
                 }
-                if (mlbs[nr_mlbs] == NULL) {
+                if (nr_mlbs >= MAX_MLBS || mlbs[nr_mlbs] == NULL) {
                     fprintf(stderr, "Unable to register macro library %s\n", argv[arg]);
                     return /* exit */ EXIT_FAILURE;
                 }
