@@ -3,6 +3,7 @@ git-info.h
 *.o
 dumpobj
 macro11
+result
 tests/*.lst
 tests/*.obj
 tests/*.objd

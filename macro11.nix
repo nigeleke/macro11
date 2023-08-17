@@ -10,11 +10,11 @@ pkgs.stdenv.mkDerivation rec {
 
   src = pkgs.fetchgit {
     url = "https://github.com/nigeleke/macro11";
-    sha256 = "sha256-vjbVDBn7wHGPnN97gMAryheHAe7vzvXqjrDiV6wHw/A=";
+    sha256 = "sha256-YHzR7h3Dzo4Iq75jDozpF6zTxJ+XaJuWcecsR3K0fNw=";
   };
 
   buildPhase = ''
-    make CFLAGS=-DSKIP_GIT_INFO
+    make CFLAGS="-D SKIP_GIT_INFO=1"
   '';
 
   installPhase = ''
