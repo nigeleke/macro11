@@ -14,7 +14,7 @@ pkgs.stdenv.mkDerivation rec {
   };
 
   buildPhase = ''
-    make
+    make CFLAGS=-DSKIP_GIT_INFO
   '';
 
   installPhase = ''
