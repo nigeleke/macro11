@@ -22,4 +22,13 @@ pkgs.stdenv.mkDerivation rec {
     install macro11 $out/bin
     install obj2bin/obj2bin.pl $out/bin
   '';
-}
+
+  meta = with lib; {
+    description = "Macro-11 assembler and obj2bin utility.";
+    longDescription = ''
+      macro11 is an assembler for the PDP-11, or PiDP-11 / SIMH simulator.
+      obj2bin.pl is a utility that creates bin files from obj files, to be loaded via boot.ini.
+    '';
+    platforms = platforms.all;
+  };
+})
