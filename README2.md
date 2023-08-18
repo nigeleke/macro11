@@ -5,7 +5,7 @@
 Prerequisites:
 
 - Install nix
-- Enable IMPURE [1]
+- Allow [unfree](https://nixos.wiki/wiki/Unfree_Software) for vscode
 
 ```
 nix develop --impure
@@ -14,7 +14,5 @@ nix develop --impure
 ## Build Nix package
 
 ```
-nix-build macro11.nix
+nix-build
 ```
-
-[1] IMPURE is required to enable vscode.

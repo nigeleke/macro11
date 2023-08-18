@@ -10,7 +10,7 @@ pkgs.stdenv.mkDerivation rec {
 
   src = pkgs.fetchgit {
     url = "https://github.com/nigeleke/macro11";
-    sha256 = "sha256-YHzR7h3Dzo4Iq75jDozpF6zTxJ+XaJuWcecsR3K0fNw=";
+    sha256 = "sha256-IcVUCBvTB/HtLdzd1wGhmUbvbvvQUf2Kpgcb1oQOkb4=";
   };
 
   buildPhase = ''
@@ -19,8 +19,7 @@ pkgs.stdenv.mkDerivation rec {
 
   installPhase = ''
     mkdir -p $out/bin
-    mv macro11 $out/bin
-    chmod +x obj2bin/obj2bin.pl
-    mv obj2bin/obj2bin.pl $out/bin
+    install macro11 $out/bin
+    install obj2bin/obj2bin.pl $out/bin
   '';
 }
