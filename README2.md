@@ -1,6 +1,6 @@
 # Macro11
 
-## DevShell
+## Development
 
 Prerequisites:
 
@@ -11,8 +11,13 @@ Prerequisites:
 nix develop --impure
 ```
 
+```
+code .
+make
+```
+
 ## Build Nix package
 
 ```
-nix-build
+nix build --impure
 ```
