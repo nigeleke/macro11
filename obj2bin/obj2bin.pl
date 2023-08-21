@@ -1,5 +1,6 @@
 #!/usr/bin/perl -w
 #!/usr/local/bin/perl -w
+#!/usr/bin/env/perl -w
 
 # Copyright (c) 2005-2016 Don North
 # All rights reserved.
