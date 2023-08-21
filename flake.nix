@@ -3,35 +3,23 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/master";
-    flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { self, nixpkgs, flake-utils }:
-    flake-utils.lib.eachDefaultSystem (system:
-      let
-        pkgs = nixpkgs.legacyPackages.${system};
-      in {
-        packages = {
-          default = pkgs.stdenv.mkDerivation {
-	    name = "macro11";
-	    src = ./.;
+  outputs = { self, nixpkgs }:
+    let
+      system = "x86_64-linux";
+      pkgs = nixpkgs.legacyPackages.${system};
+    in {
+      default = self.mkDerivation {
+        name = "macro11";
+        src = ./.;
+        buildInputs = [ pkgs.gnumake ];
+        makeFlags = [ "-D SKIP_GIT_INFO" ];
+        installPhase = ''
+          mkdir -p $out/bin
+          install macro11 $out/bin
+        '';
+      };
+    };
 
-            nativeBuildInputs = with pkgs; [
-		gnumake
-		vscode
-	    ];
-
-	    buildPhase = ''
-	      make CFLAGS="-D SKIP_GIT_INFO"
-	    '';
-
-	    installPhase = ''
-	      mkdir -p $out/bin
-	      install macro11 $out/bin
-	      install obj2bin/obj2bin.pl $out/bin
-	    '';
-
-	  };
-        };
-     });
 }
